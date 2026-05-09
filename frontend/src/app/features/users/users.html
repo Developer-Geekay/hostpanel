@@ -1,0 +1,280 @@
+<div class="page-container">
+
+  <div class="content-card">
+
+    <!-- ── Header ──────────────────────────────────────────────────────────── -->
+    <div class="cc-head">
+      <div>
+        <div class="cc-title">Users</div>
+        <div class="cc-sub">{{ users().length }} hosting user{{ users().length !== 1 ? 's' : '' }}</div>
+      </div>
+      <button mat-flat-button (click)="openAdd()">
+        <mat-icon>person_add</mat-icon>
+        Add User
+      </button>
+    </div>
+
+    <!-- ── Loading ─────────────────────────────────────────────────────────── -->
+    @if (isLoading()) {
+      <div class="loading-container">
+        <mat-spinner diameter="36" />
+      </div>
+    }
+
+    <!-- ── Error ──────────────────────────────────────────────────────────── -->
+    @if (error()) {
+      <div class="error-banner">
+        <mat-icon>error_outline</mat-icon>
+        {{ error() }}
+        <button mat-button (click)="loadUsers()">Retry</button>
+      </div>
+    }
+
+    <!-- ── Table ────────────────────────────────────────────────────────────── -->
+    @if (!isLoading() && !error()) {
+      <div class="table-container">
+        <table mat-table [dataSource]="users()" class="full-width-table">
+
+          <ng-container matColumnDef="username">
+            <th mat-header-cell *matHeaderCellDef>Username</th>
+            <td mat-cell *matCellDef="let row">
+              <div class="user-cell">
+                <div class="user-avatar-sm">{{ row.username[0].toUpperCase() }}</div>
+                <span class="mono">{{ row.username }}</span>
+              </div>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="home_dir">
+            <th mat-header-cell *matHeaderCellDef class="hide-mobile">Home</th>
+            <td mat-cell *matCellDef="let row" class="hide-mobile mono path-text">{{ row.home_dir }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="shell">
+            <th mat-header-cell *matHeaderCellDef class="hide-tablet">Shell</th>
+            <td mat-cell *matCellDef="let row" class="hide-tablet mono shell-text">{{ row.shell }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef>Status</th>
+            <td mat-cell *matCellDef="let row">
+              <mat-chip class="status-chip status-chip-{{ row.status }}" disableRipple>
+                {{ row.status }}
+              </mat-chip>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="ftp">
+            <th mat-header-cell *matHeaderCellDef class="hide-tablet">FTP</th>
+            <td mat-cell *matCellDef="let row" class="hide-tablet ftp-cell">
+              <mat-slide-toggle
+                [checked]="row.ftp_enabled"
+                (change)="onFtpChange(row, $event)"
+                [color]="'primary'">
+              </mat-slide-toggle>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef></th>
+            <td mat-cell *matCellDef="let row" class="actions-cell">
+              <button mat-icon-button [matMenuTriggerFor]="rowMenu" [attr.aria-label]="'Actions for ' + row.username">
+                <mat-icon aria-hidden="true">more_vert</mat-icon>
+              </button>
+              <mat-menu #rowMenu="matMenu">
+                <button mat-menu-item (click)="openPassword(row)">
+                  <mat-icon>password</mat-icon>
+                  Change Password
+                </button>
+                <button mat-menu-item (click)="toggleSuspend(row)">
+                  <mat-icon>{{ row.status === 'active' ? 'block' : 'check_circle' }}</mat-icon>
+                  {{ row.status === 'active' ? 'Suspend' : 'Unsuspend' }}
+                </button>
+                <mat-divider />
+                <button mat-menu-item class="danger-item" (click)="confirmDelete(row)">
+                  <mat-icon>delete_outline</mat-icon>
+                  Delete
+                </button>
+              </mat-menu>
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
+          <tr mat-row *matRowDef="let row; columns: columns;"></tr>
+        </table>
+      </div>
+    }
+
+  </div><!-- /content-card -->
+
+  <!-- ── Add User Dialog ─────────────────────────────────────────────────── -->
+  @if (showAddDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-create-user-title" (click)="showAddDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-create-user-title">Create User</h2>
+          <form [formGroup]="addForm" (ngSubmit)="submitAdd()" class="dialog-form">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Linux username</mat-label>
+              <mat-icon matPrefix aria-hidden="true">person</mat-icon>
+              <input matInput formControlName="username" placeholder="alice" autocomplete="off" />
+              @if (addForm.get('username')?.hasError('protectedUser') && addForm.get('username')?.touched) {
+                <mat-error>This is a reserved system username</mat-error>
+              } @else if (addForm.get('username')?.hasError('pattern') && addForm.get('username')?.touched) {
+                <mat-error>Use lowercase letters, numbers, underscores only</mat-error>
+              }
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Linux password (optional)</mat-label>
+              <mat-icon matPrefix aria-hidden="true">lock</mat-icon>
+              <input matInput type="password" formControlName="password" placeholder="Min 8 characters" autocomplete="new-password" />
+              @if (addForm.get('password')?.hasError('minlength') && addForm.get('password')?.touched) {
+                <mat-error>Minimum 8 characters</mat-error>
+              }
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Portal password (optional — grants panel login)</mat-label>
+              <mat-icon matPrefix aria-hidden="true">admin_panel_settings</mat-icon>
+              <input matInput type="password" formControlName="portal_password" placeholder="Min 8 characters" autocomplete="new-password" />
+              @if (addForm.get('portal_password')?.hasError('minlength') && addForm.get('portal_password')?.touched) {
+                <mat-error>Minimum 8 characters</mat-error>
+              }
+            </mat-form-field>
+            <div class="dialog-actions">
+              <button mat-button type="button" (click)="showAddDialog.set(false)">Cancel</button>
+              <button mat-flat-button type="submit" [disabled]="addForm.invalid || isSubmitting()">
+                {{ isSubmitting() ? 'Creating…' : 'Create User' }}
+              </button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+  <!-- ── Change Password Dialog ──────────────────────────────────────────── -->
+  @if (showPasswordDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-change-pw-title" (click)="showPasswordDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-change-pw-title">Change Password</h2>
+          <p class="dialog-user mono">{{ selectedUser()?.username }}</p>
+          <form [formGroup]="passwordForm" (ngSubmit)="submitPassword()" class="dialog-form">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>New password</mat-label>
+              <mat-icon matPrefix aria-hidden="true">lock</mat-icon>
+              <input matInput type="password" formControlName="new_password" autocomplete="new-password" />
+              @if (passwordForm.get('new_password')?.hasError('minlength') && passwordForm.get('new_password')?.touched) {
+                <mat-error>Minimum 8 characters</mat-error>
+              }
+            </mat-form-field>
+            <div class="dialog-actions">
+              <button mat-button type="button" (click)="showPasswordDialog.set(false)">Cancel</button>
+              <button mat-flat-button type="submit" [disabled]="passwordForm.invalid">Update</button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+  <!-- ── Enable FTP Dialog ─────────────────────────────────────────────── -->
+  @if (showFtpDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-ftp-title" (click)="showFtpDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-ftp-title">Enable FTP</h2>
+          <p class="dialog-user mono">{{ ftpUser()?.username }}</p>
+          <p class="dialog-sub">Set an FTP password and optionally restrict the FTP root directory.</p>
+          <form [formGroup]="ftpForm" (ngSubmit)="submitEnableFtp()" class="dialog-form">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>FTP Password</mat-label>
+              <mat-icon matPrefix aria-hidden="true">lock</mat-icon>
+              <input matInput type="password" formControlName="password" placeholder="Min 8 characters" autocomplete="new-password" />
+              @if (ftpForm.get('password')?.hasError('minlength') && ftpForm.get('password')?.touched) {
+                <mat-error>Minimum 8 characters</mat-error>
+              }
+            </mat-form-field>
+            @if (ftpForm.get('password')?.value) {
+              <div class="pw-strength">
+                <div class="pw-strength-bar">
+                  @for (i of [1,2,3,4]; track i) {
+                    <div class="pw-segment" [style.background]="i <= ftpPasswordStrength ? ftpStrengthColor : 'var(--surface-3)'"></div>
+                  }
+                </div>
+                <span class="pw-strength-label" [style.color]="ftpStrengthColor">{{ ftpStrengthLabel }}</span>
+              </div>
+            }
+            <div class="ftp-dir-row">
+              <div class="ftp-dir-prefix mono">/home/{{ ftpUser()?.username }}/</div>
+              <mat-form-field appearance="outline" class="ftp-dir-sub">
+                <mat-label>Sub-directory (optional)</mat-label>
+                <mat-icon matPrefix>folder_open</mat-icon>
+                <input matInput formControlName="subdirectory" placeholder="public_html" />
+                <mat-hint>Leave blank to use /home/{{ ftpUser()?.username }} as FTP root</mat-hint>
+              </mat-form-field>
+            </div>
+            <div class="dialog-actions">
+              <button mat-button type="button" (click)="showFtpDialog.set(false)">Cancel</button>
+              <button mat-flat-button type="submit" [disabled]="ftpForm.invalid">Enable FTP</button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+  <!-- ── Delete Confirmation Dialog ─────────────────────────────────────── -->
+  @if (showDeleteDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-delete-user-title" (click)="showDeleteDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-delete-user-title">Delete User</h2>
+          <p class="dialog-sub">
+            You are about to permanently delete <strong class="mono">{{ userToDelete()?.username }}</strong>.
+            Take a backup of any important data before proceeding.
+          </p>
+
+          @if (isLoadingResources()) {
+            <div class="resources-loading">
+              <mat-spinner diameter="16"></mat-spinner>
+              <span>Checking associated resources…</span>
+            </div>
+          }
+
+          @if (userResources()) {
+            <div class="delete-resources">
+              <div class="delete-resources-title">
+                <mat-icon>warning</mat-icon>
+                The following will also be permanently deleted:
+              </div>
+              <ul class="delete-resources-list">
+                <li><mat-icon>home</mat-icon> Home directory <span class="mono">/home/{{ userToDelete()?.username }}</span></li>
+                @for (domain of userResources()!.domains; track domain) {
+                  <li><mat-icon>language</mat-icon> Domain <span class="mono">{{ domain }}</span></li>
+                }
+                @for (cert of userResources()!.ssl_certs; track cert) {
+                  <li><mat-icon>lock</mat-icon> SSL certificate for <span class="mono">{{ cert }}</span></li>
+                }
+                @for (db of userResources()!.databases; track db) {
+                  <li><mat-icon>storage</mat-icon> Database <span class="mono">{{ db }}</span></li>
+                }
+                @if (userResources()!.ftp_account) {
+                  <li><mat-icon>cloud_upload</mat-icon> FTP account</li>
+                }
+              </ul>
+            </div>
+          }
+
+          <div class="dialog-actions">
+            <button mat-button type="button" (click)="showDeleteDialog.set(false)" [disabled]="isDeleting()">Cancel</button>
+            <button mat-flat-button color="warn" (click)="executeDelete()" [disabled]="isDeleting()">
+              {{ isDeleting() ? 'Deleting…' : 'Delete Everything' }}
+            </button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+</div>

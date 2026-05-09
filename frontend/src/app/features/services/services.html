@@ -1,0 +1,172 @@
+<div class="page-container">
+  <div class="content-card">
+
+    <!-- ══════════════════════════════════════════════════════
+         SERVICE CARD GRID
+    ══════════════════════════════════════════════════════ -->
+    @if (!selectedLog()) {
+
+      <div class="cc-head">
+        <div>
+          <div class="cc-title">Services</div>
+          <div class="cc-sub">Start, stop, or restart server processes</div>
+        </div>
+      </div>
+
+      @if (isLoading()) {
+        <div class="loading-container"><mat-spinner diameter="36" /></div>
+      }
+
+      @if (!isLoading()) {
+        <div class="services-grid">
+          @for (svc of services(); track svc.name) {
+            <div class="svc-card" [class]="'svc-card--' + svc.status">
+
+              <div class="svc-head">
+                <div class="svc-icon">
+                  <mat-icon>{{ serviceIcon(svc.name) }}</mat-icon>
+                </div>
+                <div class="svc-meta">
+                  <div class="svc-name">{{ serviceLabel(svc.name) }}</div>
+                  <div class="svc-unit mono">{{ svc.unit }}</div>
+                </div>
+                <div class="svc-badge svc-badge--{{ svc.status }}">
+                  <span class="status-dot"></span>
+                  {{ svc.status }}
+                </div>
+              </div>
+
+              <div class="svc-actions">
+                <button mat-stroked-button
+                  [disabled]="actingOn() === svc.name || svc.status === 'running'"
+                  (click)="action(svc.name, 'start')" matTooltip="Start service">
+                  <mat-icon>play_arrow</mat-icon> Start
+                </button>
+                <button mat-stroked-button
+                  [disabled]="actingOn() === svc.name || svc.status === 'stopped'"
+                  (click)="action(svc.name, 'stop')" matTooltip="Stop service">
+                  <mat-icon>stop</mat-icon> Stop
+                </button>
+                <button mat-flat-button
+                  [disabled]="actingOn() === svc.name"
+                  (click)="action(svc.name, 'restart')" matTooltip="Restart service">
+                  @if (actingOn() === svc.name) { <mat-spinner diameter="14" /> }
+                  @else { <mat-icon>refresh</mat-icon> }
+                  Restart
+                </button>
+                @if (canReload(svc.name)) {
+                  <button mat-stroked-button
+                    [disabled]="actingOn() === svc.name"
+                    (click)="action(svc.name, 'reload')" matTooltip="Reload config without downtime">
+                    <mat-icon>cached</mat-icon> Reload
+                  </button>
+                }
+                <div class="svc-actions-spacer"></div>
+                <button mat-stroked-button (click)="openLogs(svc)" matTooltip="View journalctl logs">
+                  <mat-icon>terminal</mat-icon> Logs
+                </button>
+              </div>
+
+            </div>
+          }
+        </div>
+      }
+
+    }
+
+    <!-- ══════════════════════════════════════════════════════
+         LOG VIEWER
+    ══════════════════════════════════════════════════════ -->
+    @if (selectedLog(); as svc) {
+
+      <!-- Header -->
+      <div class="cc-head log-head">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button mat-icon-button (click)="closeLogs()" matTooltip="Back to services" aria-label="Back">
+            <mat-icon>arrow_back</mat-icon>
+          </button>
+          <div class="svc-icon svc-icon--sm">
+            <mat-icon>{{ serviceIcon(svc.name) }}</mat-icon>
+          </div>
+          <div>
+            <div class="cc-title">{{ serviceLabel(svc.name) }}</div>
+            <div class="cc-sub mono">{{ svc.unit }}</div>
+          </div>
+          <div class="svc-badge svc-badge--{{ svc.status }}" style="margin-left:4px;">
+            <span class="status-dot"></span>{{ svc.status }}
+          </div>
+        </div>
+
+        <!-- Log controls -->
+        <div class="log-controls">
+          <div class="log-lines-wrap">
+            <span class="log-ctrl-label">Lines</span>
+            <select class="log-lines-select mono"
+              [value]="logLinesCount()"
+              (change)="logLinesCount.set(+$any($event.target).value); onLinesChange()">
+              <option value="50">50</option>
+              <option value="200">200</option>
+              <option value="500">500</option>
+              <option value="1000">1000</option>
+            </select>
+          </div>
+
+          <label class="auto-refresh-toggle" [class.is-on]="autoRefresh()">
+            <mat-icon>{{ autoRefresh() ? 'sync' : 'sync_disabled' }}</mat-icon>
+            <span>Auto</span>
+            <input type="checkbox" [checked]="autoRefresh()" (change)="toggleAutoRefresh($any($event.target).checked)" style="display:none" />
+          </label>
+
+          <button mat-stroked-button (click)="fetchLogs()" [disabled]="logLoading()" matTooltip="Refresh logs">
+            <mat-icon [class.spinning]="logLoading()">refresh</mat-icon>
+          </button>
+
+          <!-- Quick actions inline -->
+          <button mat-stroked-button
+            [disabled]="actingOn() === svc.name || svc.status === 'running'"
+            (click)="action(svc.name, 'start')" matTooltip="Start">
+            <mat-icon>play_arrow</mat-icon>
+          </button>
+          <button mat-stroked-button
+            [disabled]="actingOn() === svc.name || svc.status === 'stopped'"
+            (click)="action(svc.name, 'stop')" matTooltip="Stop">
+            <mat-icon>stop</mat-icon>
+          </button>
+          <button mat-flat-button
+            [disabled]="actingOn() === svc.name"
+            (click)="action(svc.name, 'restart')" matTooltip="Restart">
+            @if (actingOn() === svc.name) { <mat-spinner diameter="14" /> }
+            @else { <mat-icon>refresh</mat-icon> }
+          </button>
+        </div>
+      </div>
+
+      <!-- Terminal output -->
+      <div class="log-terminal" #logOutput>
+        @if (logLoading() && logLines().length === 0) {
+          <div class="log-fetching">
+            <mat-spinner diameter="20" />
+            <span>Fetching logs…</span>
+          </div>
+        }
+        @if (!logLoading() && logLines().length === 0) {
+          <div class="log-empty">No log entries found for this service.</div>
+        }
+        @for (line of logLines(); track $index) {
+          <div class="log-line {{ logLineClass(line) }}">{{ line }}</div>
+        }
+      </div>
+
+      <div class="log-footer">
+        <span class="log-footer-info">
+          {{ logLines().length }} line{{ logLines().length !== 1 ? 's' : '' }}
+          &nbsp;·&nbsp; {{ svc.unit }}
+          @if (autoRefresh()) { &nbsp;·&nbsp; <span class="log-live-badge">● LIVE</span> }
+        </span>
+        <span class="log-footer-hint">Scroll up for older entries</span>
+      </div>
+
+    }
+
+  </div>
+</div>

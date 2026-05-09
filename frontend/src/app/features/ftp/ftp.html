@@ -1,0 +1,172 @@
+<div class="page-container">
+
+  <div class="content-card">
+
+    <!-- ── Header ─────────────────────────────────────────────────────────── -->
+    <div class="cc-head">
+      <div>
+        <div class="cc-title">FTP Accounts</div>
+        <div class="cc-sub">{{ accounts().length }} account{{ accounts().length !== 1 ? 's' : '' }}</div>
+      </div>
+      <button mat-flat-button (click)="openAdd()">
+        <mat-icon>add</mat-icon>
+        Add Account
+      </button>
+    </div>
+
+    <!-- ── Loading ────────────────────────────────────────────────────────── -->
+    @if (isLoading()) {
+      <div class="loading-container">
+        <mat-spinner diameter="36" />
+      </div>
+    }
+
+    <!-- ── Error ──────────────────────────────────────────────────────────── -->
+    @if (error()) {
+      <div class="error-banner">
+        <mat-icon>error_outline</mat-icon>
+        {{ error() }}
+        <button mat-button (click)="loadAccounts()">Retry</button>
+      </div>
+    }
+
+    <!-- ── Table ──────────────────────────────────────────────────────────── -->
+    @if (!isLoading() && !error()) {
+      <div class="table-container">
+        <table mat-table [dataSource]="accounts()" class="full-width-table">
+
+          <ng-container matColumnDef="username">
+            <th mat-header-cell *matHeaderCellDef>Username</th>
+            <td mat-cell *matCellDef="let row">
+              <div class="user-cell">
+                <div class="ftp-avatar">{{ row.username[0].toUpperCase() }}</div>
+                <span class="mono">{{ row.username }}</span>
+              </div>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="home_dir">
+            <th mat-header-cell *matHeaderCellDef class="hide-mobile">Home Directory</th>
+            <td mat-cell *matCellDef="let row" class="hide-mobile mono path-text">{{ row.home_dir }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef></th>
+            <td mat-cell *matCellDef="let row" class="actions-cell">
+              <button mat-icon-button [matMenuTriggerFor]="menu" [attr.aria-label]="'Actions for ' + row.username">
+                <mat-icon aria-hidden="true">more_vert</mat-icon>
+              </button>
+              <mat-menu #menu="matMenu">
+                <button mat-menu-item (click)="openPassword(row)">
+                  <mat-icon>password</mat-icon> Change Password
+                </button>
+                <mat-divider />
+                <button mat-menu-item class="danger-item" (click)="confirmDelete(row)">
+                  <mat-icon>delete_outline</mat-icon> Delete
+                </button>
+              </mat-menu>
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
+          <tr mat-row *matRowDef="let row; columns: columns;"></tr>
+        </table>
+      </div>
+    }
+
+  </div><!-- /content-card -->
+
+  <!-- ── Add Account Dialog ─────────────────────────────────────────────── -->
+  @if (showAddDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-create-ftp-title" (click)="showAddDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-create-ftp-title">Create FTP Account</h2>
+          @if (isAdmin()) {
+            <p class="dialog-sub">The username must match an existing system user.</p>
+          } @else {
+            <p class="dialog-sub">Set an FTP password for your account.</p>
+          }
+          <form [formGroup]="addForm" (ngSubmit)="submitAdd()" class="dialog-form">
+            @if (isAdmin()) {
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>System username</mat-label>
+                <mat-icon matPrefix aria-hidden="true">person</mat-icon>
+                <input matInput formControlName="username" placeholder="alice" autocomplete="off" />
+                @if (addForm.get('username')?.invalid && addForm.get('username')?.touched) {
+                  <mat-error>Use lowercase letters, numbers, underscores only</mat-error>
+                }
+              </mat-form-field>
+            }
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>FTP Password</mat-label>
+              <mat-icon matPrefix aria-hidden="true">lock</mat-icon>
+              <input matInput type="password" formControlName="password" autocomplete="new-password" />
+              @if (addForm.get('password')?.hasError('minlength') && addForm.get('password')?.touched) {
+                <mat-error>Minimum 8 characters</mat-error>
+              }
+            </mat-form-field>
+            <div class="ftp-dir-row">
+              <div class="ftp-dir-prefix mono">/home/{{ isAdmin() ? (addForm.get('username')?.value || '…') : currentUsername() }}/</div>
+              <mat-form-field appearance="outline" class="ftp-dir-sub">
+                <mat-label>Sub-directory (optional)</mat-label>
+                <mat-icon matPrefix>folder_open</mat-icon>
+                <input matInput formControlName="subdirectory" placeholder="public_html" />
+                <mat-hint>Leave blank to use the home directory as FTP root</mat-hint>
+              </mat-form-field>
+            </div>
+            <div class="dialog-actions">
+              <button mat-button type="button" (click)="showAddDialog.set(false)">Cancel</button>
+              <button mat-flat-button type="submit" [disabled]="addForm.invalid || isSubmitting()">
+                {{ isSubmitting() ? 'Creating…' : 'Create' }}
+              </button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+  <!-- ── Change Password Dialog ─────────────────────────────────────────── -->
+  @if (showPasswordDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-ftp-pw-title" (click)="showPasswordDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-ftp-pw-title">Change FTP Password</h2>
+          <p class="dialog-user mono">{{ selectedAccount()?.username }}</p>
+          <form [formGroup]="passwordForm" (ngSubmit)="submitPassword()" class="dialog-form">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>New password</mat-label>
+              <mat-icon matPrefix aria-hidden="true">lock</mat-icon>
+              <input matInput type="password" formControlName="new_password" autocomplete="new-password" />
+              @if (passwordForm.get('new_password')?.hasError('minlength') && passwordForm.get('new_password')?.touched) {
+                <mat-error>Minimum 8 characters</mat-error>
+              }
+            </mat-form-field>
+            <div class="dialog-actions">
+              <button mat-button type="button" (click)="showPasswordDialog.set(false)">Cancel</button>
+              <button mat-flat-button type="submit" [disabled]="passwordForm.invalid">Update</button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+  <!-- ── Delete Confirmation Dialog ────────────────────────────────────── -->
+  @if (showDeleteDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-delete-ftp-title" (click)="showDeleteDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-delete-ftp-title">Delete FTP Account</h2>
+          <p class="dialog-sub">This will remove FTP access for <strong class="mono">{{ accountToDelete()?.username }}</strong>. Their files will not be deleted.</p>
+          <div class="dialog-actions">
+            <button mat-button type="button" (click)="showDeleteDialog.set(false)">Cancel</button>
+            <button mat-flat-button color="warn" (click)="executeDelete()">Delete</button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+</div>

@@ -1,0 +1,128 @@
+<div class="page-container">
+
+  <div class="content-card">
+
+    <!-- ── Header ──────────────────────────────────────────────────────────── -->
+    <div class="cc-head">
+      <div>
+        <div class="cc-title">SSH Keys</div>
+        <div class="cc-sub">Manage authorized public keys per user</div>
+      </div>
+      <button mat-flat-button (click)="openAdd()">
+        <mat-icon>add</mat-icon>
+        Add Key
+      </button>
+    </div>
+
+    <!-- ── User Selector + Access Toggle ────────────────────────────────────── -->
+    <div class="cc-controls">
+      @if (isAdmin()) {
+        <mat-form-field appearance="outline" class="user-select">
+          <mat-label>User</mat-label>
+          <mat-select [(ngModel)]="selectedUsername" [ngModelOptions]="{standalone: true}">
+            @for (u of users; track u.username) {
+              <mat-option [value]="u.username">{{ u.username }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      } @else {
+        <div class="user-label mono">{{ selectedUsername() }}</div>
+      }
+
+      @if (selectedUser(); as user) {
+        @if (isAdmin()) {
+          <div class="ssh-toggle">
+            <mat-slide-toggle
+              [checked]="user.sshEnabled"
+              (change)="toggleSshAccess(user)"
+              color="primary">
+              SSH Access
+            </mat-slide-toggle>
+            <span class="toggle-hint">
+              {{ user.sshEnabled ? 'Shell access enabled' : 'Shell access disabled' }}
+            </span>
+          </div>
+        }
+      }
+    </div>
+
+    <!-- ── Keys Table ────────────────────────────────────────────────────────── -->
+    <div class="table-container">
+      <table mat-table [dataSource]="filteredKeys()" class="full-width-table">
+
+        <ng-container matColumnDef="label">
+          <th mat-header-cell *matHeaderCellDef>Label</th>
+          <td mat-cell *matCellDef="let row">{{ row.label }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="type">
+          <th mat-header-cell *matHeaderCellDef>Type</th>
+          <td mat-cell *matCellDef="let row">
+            <mat-chip class="type-chip" disableRipple>{{ row.type }}</mat-chip>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="fingerprint">
+          <th mat-header-cell *matHeaderCellDef class="hide-mobile">Fingerprint</th>
+          <td mat-cell *matCellDef="let row" class="hide-mobile mono fingerprint">{{ row.fingerprint }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef></th>
+          <td mat-cell *matCellDef="let row" class="actions-cell">
+            <button mat-icon-button color="warn" (click)="deleteKey(row)" matTooltip="Remove key" [attr.aria-label]="'Remove key ' + row.label">
+              <mat-icon aria-hidden="true">delete_outline</mat-icon>
+            </button>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
+        <tr mat-row *matRowDef="let row; columns: columns;"></tr>
+
+        <tr class="mat-row" *matNoDataRow>
+          <td class="mat-cell empty-state" colspan="4">
+            <mat-icon>vpn_key</mat-icon>
+            <p>No SSH keys for {{ selectedUsername() }}</p>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+  </div><!-- /content-card -->
+
+  <!-- Add Key Dialog -->
+  @if (showAddDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-add-ssh-title" (click)="showAddDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-add-ssh-title">Add SSH Key</h2>
+          <p class="dialog-subtitle">Adding key for <span class="mono">{{ selectedUsername() }}</span></p>
+          <form [formGroup]="addForm" (ngSubmit)="submitAdd()" class="dialog-form">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Label</mat-label>
+              <mat-icon matPrefix>label</mat-icon>
+              <input matInput formControlName="label" placeholder="My MacBook" />
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Public Key</mat-label>
+              <textarea
+                matInput
+                formControlName="public_key"
+                rows="5"
+                class="mono key-textarea"
+                placeholder="ssh-ed25519 AAAA... user@host"></textarea>
+              @if (addForm.get('public_key')?.invalid && addForm.get('public_key')?.touched) {
+                <mat-error>Paste a valid SSH public key</mat-error>
+              }
+            </mat-form-field>
+            <div class="dialog-actions">
+              <button mat-button type="button" (click)="showAddDialog.set(false)">Cancel</button>
+              <button mat-flat-button type="submit" [disabled]="addForm.invalid">Add Key</button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+</div>

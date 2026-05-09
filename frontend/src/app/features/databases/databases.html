@@ -1,0 +1,151 @@
+<div class="page-container">
+
+  <div class="content-card">
+
+    <div class="cc-head">
+      <div>
+        <div class="cc-title">Databases</div>
+        <div class="cc-sub">MySQL · {{ databases().length }} database{{ databases().length !== 1 ? 's' : '' }}</div>
+      </div>
+      <button mat-flat-button (click)="openAdd()">
+        <mat-icon>add</mat-icon>
+        Create Database
+      </button>
+    </div>
+
+    <!-- Credentials reveal banner -->
+    @if (newCredentials()) {
+      <div class="creds-banner">
+        <div class="creds-head">
+          <mat-icon>key</mat-icon>
+          <span>Database created — save these credentials now. The password will not be shown again.</span>
+          <button mat-icon-button (click)="dismissCredentials()" class="close-btn" matTooltip="Dismiss">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+        <div class="creds-grid">
+          <div class="cred-item">
+            <div class="cred-label">Database</div>
+            <div class="cred-val mono">{{ newCredentials()!.name }}</div>
+          </div>
+          <div class="cred-item">
+            <div class="cred-label">Username</div>
+            <div class="cred-val mono">
+              {{ newCredentials()!.db_user }}
+              <button mat-icon-button (click)="copyToClipboard(newCredentials()!.db_user, 'Username')" class="copy-btn" matTooltip="Copy">
+                <mat-icon>content_copy</mat-icon>
+              </button>
+            </div>
+          </div>
+          <div class="cred-item">
+            <div class="cred-label">Password</div>
+            <div class="cred-val mono">
+              {{ newCredentials()!.password }}
+              <button mat-icon-button (click)="copyToClipboard(newCredentials()!.password, 'Password')" class="copy-btn" matTooltip="Copy">
+                <mat-icon>content_copy</mat-icon>
+              </button>
+            </div>
+          </div>
+          <div class="cred-item">
+            <div class="cred-label">Host</div>
+            <div class="cred-val mono">localhost</div>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (isLoading()) {
+      <div class="loading-container"><mat-spinner diameter="36" /></div>
+    }
+
+    @if (error()) {
+      <div class="error-banner">
+        <mat-icon>error_outline</mat-icon>
+        {{ error() }}
+        <button mat-button (click)="load()">Retry</button>
+      </div>
+    }
+
+    @if (!isLoading() && !error()) {
+      <div class="table-container">
+        <table mat-table [dataSource]="databases()" class="full-width-table">
+
+          <ng-container matColumnDef="name">
+            <th mat-header-cell *matHeaderCellDef>Database</th>
+            <td mat-cell *matCellDef="let row" class="mono db-name">{{ row.name }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="db_user">
+            <th mat-header-cell *matHeaderCellDef>User</th>
+            <td mat-cell *matCellDef="let row" class="mono">{{ row.db_user }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="size">
+            <th mat-header-cell *matHeaderCellDef class="hide-mobile">Size</th>
+            <td mat-cell *matCellDef="let row" class="mono size-text hide-mobile">{{ row.size }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="created_at">
+            <th mat-header-cell *matHeaderCellDef class="hide-tablet">Created</th>
+            <td mat-cell *matCellDef="let row" class="dim-text hide-tablet">{{ row.created_at }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef></th>
+            <td mat-cell *matCellDef="let row" class="actions-cell">
+              <button mat-icon-button class="danger-icon"
+                (click)="deleteDb(row.name)"
+                [disabled]="deletingDb() === row.name"
+                matTooltip="Delete database and user">
+                <mat-icon>delete_outline</mat-icon>
+              </button>
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
+          <tr mat-row *matRowDef="let row; columns: columns;"></tr>
+          <tr class="mat-row" *matNoDataRow>
+            <td class="mat-cell empty-state" colspan="5">
+              <mat-icon>storage</mat-icon>
+              <p>No databases yet. Create one to get started.</p>
+            </td>
+          </tr>
+        </table>
+      </div>
+    }
+
+  </div>
+
+  <!-- ── Create Database Dialog ───────────────────────────────────────────── -->
+  @if (showAddDialog()) {
+    <div class="dialog-backdrop" (click)="showAddDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title">Create MySQL Database</h2>
+          <p class="dialog-sub">
+            A matching database user will be created automatically with full privileges.
+            The password is shown once after creation.
+          </p>
+          <form [formGroup]="addForm" (ngSubmit)="submitAdd()" class="dialog-form">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Database name</mat-label>
+              <mat-icon matPrefix>storage</mat-icon>
+              <input matInput formControlName="name" placeholder="myapp_db" />
+              <mat-hint>Lowercase letters, digits, underscores only</mat-hint>
+              @if (addForm.get('name')?.invalid && addForm.get('name')?.touched) {
+                <mat-error>Lowercase letters, digits, underscores only (max 64)</mat-error>
+              }
+            </mat-form-field>
+            <div class="dialog-actions">
+              <button mat-button type="button" (click)="showAddDialog.set(false)">Cancel</button>
+              <button mat-flat-button type="submit" [disabled]="addForm.invalid || isCreating()">
+                {{ isCreating() ? 'Creating…' : 'Create Database' }}
+              </button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+</div>

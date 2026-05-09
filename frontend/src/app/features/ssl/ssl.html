@@ -1,0 +1,224 @@
+<div class="page-container">
+
+  <div class="content-card">
+
+    <div class="cc-head">
+      <div>
+        <div class="cc-title">SSL Certificates</div>
+        <div class="cc-sub">Let's Encrypt · Webroot validation</div>
+      </div>
+      <div class="cc-head-actions">
+        <div class="renewal-toggle">
+          <mat-slide-toggle
+            [checked]="autoRenewal()"
+            [disabled]="isTogglingRenewal()"
+            (change)="toggleAutoRenewal($event.checked)"
+            matTooltip="Auto-renew certificates 30 days before expiry">
+          </mat-slide-toggle>
+          <span class="renewal-label">Auto-renewal</span>
+        </div>
+        <button mat-flat-button (click)="openIssue()">
+          <mat-icon>add</mat-icon>
+          Issue Certificate
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="cc-stats">
+      <div class="cc-stat-item">
+        <div class="cc-stat-icon valid-icon"><mat-icon>verified_user</mat-icon></div>
+        <div class="cc-stat-val mono">{{ validCount() }}</div>
+        <div class="cc-stat-label">Active</div>
+      </div>
+      <div class="cc-stat-item">
+        <div class="cc-stat-icon expiring-icon"><mat-icon>schedule</mat-icon></div>
+        <div class="cc-stat-val mono">{{ expiringSoonCount() }}</div>
+        <div class="cc-stat-label">Expiring Soon</div>
+      </div>
+      <div class="cc-stat-item">
+        <div class="cc-stat-icon none-icon"><mat-icon>lock_open</mat-icon></div>
+        <div class="cc-stat-val mono">{{ noneCount() }}</div>
+        <div class="cc-stat-label">Not Issued</div>
+      </div>
+    </div>
+
+    @if (isLoading()) {
+      <div class="loading-container"><mat-spinner diameter="36" /></div>
+    }
+
+    @if (error()) {
+      <div class="error-banner">
+        <mat-icon>error_outline</mat-icon>
+        {{ error() }}
+        <button mat-button (click)="loadCerts()">Retry</button>
+      </div>
+    }
+
+    @if (!isLoading() && !error()) {
+      <div class="table-container">
+        <table mat-table [dataSource]="certs()" class="full-width-table">
+
+          <ng-container matColumnDef="domain">
+            <th mat-header-cell *matHeaderCellDef>Domain</th>
+            <td mat-cell *matCellDef="let row" class="mono domain-cell">{{ row.domain }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef>Status</th>
+            <td mat-cell *matCellDef="let row">
+              <mat-chip [class]="'status-chip ' + statusClass(row.status)" disableRipple>
+                @if (row.status === 'pending') {
+                  <mat-icon class="spin-icon">sync</mat-icon>
+                }
+                {{ statusLabel(row.status) }}
+              </mat-chip>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="expiry">
+            <th mat-header-cell *matHeaderCellDef class="hide-mobile">Expiry</th>
+            <td mat-cell *matCellDef="let row" class="hide-mobile mono dim-text">
+              {{ row.expiry ?? '—' }}
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="days">
+            <th mat-header-cell *matHeaderCellDef class="hide-mobile">Days Left</th>
+            <td mat-cell *matCellDef="let row" class="hide-mobile">
+              @if (row.days_remaining !== null) {
+                <span class="days-value mono" [style.color]="daysColor(row.days_remaining)">
+                  {{ row.days_remaining > 0 ? row.days_remaining : 'Expired' }}
+                </span>
+              } @else {
+                <span class="dim-text">—</span>
+              }
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="https_forced">
+            <th mat-header-cell *matHeaderCellDef class="hide-mobile">Force HTTPS</th>
+            <td mat-cell *matCellDef="let row" class="hide-mobile">
+              <mat-slide-toggle
+                [checked]="row.https_forced"
+                [disabled]="row.status !== 'valid' || togglingDomain() === row.domain"
+                (change)="toggleForceHttps(row.domain, $event.checked)"
+                matTooltip="{{ row.status !== 'valid' ? 'Requires an active certificate' : '' }}">
+              </mat-slide-toggle>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef></th>
+            <td mat-cell *matCellDef="let row" class="actions-cell">
+              @if (row.status === 'none' || row.status === 'expired' || row.status === 'expiring_soon') {
+                <button mat-stroked-button (click)="openIssue(row.domain)" class="issue-btn"
+                  [matTooltip]="row.status === 'none' ? 'Issue certificate' : 'Renew certificate'">
+                  <mat-icon>lock</mat-icon>
+                  <span class="hide-mobile">{{ row.status === 'none' ? 'Issue' : 'Renew' }}</span>
+                </button>
+              }
+              @if (row.status === 'pending') {
+                <span class="pending-text">
+                  <mat-icon class="spin-icon">sync</mat-icon>
+                  <span class="hide-mobile">Verifying…</span>
+                </span>
+              }
+              @if (row.status === 'valid') {
+                <button mat-icon-button class="danger-icon" (click)="confirmRevoke(row.domain)" matTooltip="Remove certificate" aria-label="Remove certificate">
+                  <mat-icon aria-hidden="true">delete_outline</mat-icon>
+                </button>
+              }
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
+          <tr mat-row *matRowDef="let row; columns: columns;"></tr>
+          <tr class="mat-row" *matNoDataRow>
+            <td class="mat-cell empty-state" colspan="6">
+              <mat-icon>lock_open</mat-icon>
+              <p>No websites provisioned yet.</p>
+            </td>
+          </tr>
+        </table>
+      </div>
+    }
+
+  </div>
+
+  <!-- ── Issue Certificate Dialog ─────────────────────────────────────────── -->
+  @if (showIssueDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-issue-ssl-title" (click)="showIssueDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-issue-ssl-title">Issue SSL Certificate</h2>
+          <p class="dialog-sub">
+            Let's Encrypt will verify ownership via the domain's web root.
+            Ensure an A record points to this server before issuing.
+          </p>
+          <form [formGroup]="issueForm" (ngSubmit)="submitIssue()" class="dialog-form">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Domain</mat-label>
+              <mat-icon matPrefix>language</mat-icon>
+              <mat-select formControlName="domain">
+                @for (d of domains(); track d) {
+                  <mat-option [value]="d">{{ d }}</mat-option>
+                }
+              </mat-select>
+              @if (issueForm.get('domain')?.invalid && issueForm.get('domain')?.touched) {
+                <mat-error>Select a domain</mat-error>
+              }
+            </mat-form-field>
+            @if (isLoadingSubdomains()) {
+              <div class="subdomains-loading">
+                <mat-spinner diameter="16"></mat-spinner>
+                <span>Loading subdomains…</span>
+              </div>
+            }
+            @if (availableSubdomains().length > 0) {
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Include subdomains (optional)</mat-label>
+                <mat-icon matPrefix>subdirectory_arrow_right</mat-icon>
+                <mat-select formControlName="additionalDomains" multiple>
+                  @for (sub of availableSubdomains(); track sub) {
+                    <mat-option [value]="sub">{{ sub }}</mat-option>
+                  }
+                </mat-select>
+                <mat-hint>Selected subdomains are added as SANs to the same certificate</mat-hint>
+              </mat-form-field>
+            }
+            <div class="dialog-actions">
+              <button mat-button type="button" (click)="showIssueDialog.set(false)">Cancel</button>
+              <button mat-flat-button type="submit" [disabled]="issueForm.invalid || isIssuing()">
+                {{ isIssuing() ? 'Requesting…' : 'Issue Certificate' }}
+              </button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+  <!-- ── Revoke Confirmation Dialog ──────────────────────────────────────── -->
+  @if (showRevokeDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-revoke-ssl-title" (click)="showRevokeDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-revoke-ssl-title">Remove Certificate</h2>
+          <p class="dialog-sub">
+            This will delete the Let's Encrypt certificate for
+            <strong class="mono">{{ domainToRevoke() }}</strong>.
+            The site will lose HTTPS. This cannot be undone.
+          </p>
+          <div class="dialog-actions">
+            <button mat-button type="button" (click)="showRevokeDialog.set(false)">Cancel</button>
+            <button mat-flat-button color="warn" (click)="executeRevoke()" [disabled]="isRevoking()">
+              {{ isRevoking() ? 'Removing…' : 'Remove Certificate' }}
+            </button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+</div>

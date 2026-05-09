@@ -1,0 +1,10 @@
+# Expose routers for easy importing
+from .dashboard import router as dashboard_router
+from .users import router as users_router
+from .ssh import router as ssh_router
+from .databases import router as databases_router
+from .files import router as files_router
+from .dns import router as dns_router
+from .ssl import router as ssl_router
+from .services import router as services_router
+from .packages import router as packages_router

@@ -1,0 +1,143 @@
+<div class="page-container">
+
+  <div class="content-card">
+
+    <div class="cc-head">
+      <div>
+        <div class="cc-title">Redirects</div>
+        <div class="cc-sub">URL redirects embedded in your domain's nginx config</div>
+      </div>
+      <button mat-flat-button (click)="openAdd()">
+        <mat-icon>add</mat-icon>
+        Add Redirect
+      </button>
+    </div>
+
+    @if (isLoading()) {
+      <div class="loading-container"><mat-spinner diameter="36" /></div>
+    }
+
+    @if (error()) {
+      <div class="error-banner">
+        <mat-icon>error_outline</mat-icon>
+        {{ error() }}
+        <button mat-button (click)="load()">Retry</button>
+      </div>
+    }
+
+    @if (!isLoading() && !error()) {
+      <div class="table-container">
+        <table mat-table [dataSource]="redirects()" class="full-width-table">
+
+          <ng-container matColumnDef="source">
+            <th mat-header-cell *matHeaderCellDef>Source</th>
+            <td mat-cell *matCellDef="let row">
+              <div class="source-domain mono">{{ row.source_domain }}</div>
+              <div class="source-path mono dim-text">{{ row.source_path }}</div>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="destination">
+            <th mat-header-cell *matHeaderCellDef>Destination</th>
+            <td mat-cell *matCellDef="let row" class="mono dest-cell">{{ row.destination }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="type">
+            <th mat-header-cell *matHeaderCellDef>Type</th>
+            <td mat-cell *matCellDef="let row">
+              <mat-chip [class]="'status-chip ' + (row.type === 301 ? 'chip-301' : 'chip-302')" disableRipple>
+                {{ row.type }}
+              </mat-chip>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef></th>
+            <td mat-cell *matCellDef="let row" class="actions-cell">
+              <button mat-icon-button class="danger-icon"
+                (click)="deleteRedirect(row.id)"
+                [disabled]="deletingId() === row.id"
+                matTooltip="Delete redirect">
+                <mat-icon>delete_outline</mat-icon>
+              </button>
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
+          <tr mat-row *matRowDef="let row; columns: columns;"></tr>
+          <tr class="mat-row" *matNoDataRow>
+            <td class="mat-cell empty-state" colspan="4">
+              <mat-icon>alt_route</mat-icon>
+              <p>No redirects configured yet.</p>
+            </td>
+          </tr>
+        </table>
+      </div>
+    }
+
+  </div>
+
+  <!-- ── Add Redirect Dialog ──────────────────────────────────────────────── -->
+  @if (showAddDialog()) {
+    <div class="dialog-backdrop" (click)="showAddDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title">Add Redirect</h2>
+          <p class="dialog-sub">
+            Redirects are added as <code>location</code> blocks inside your domain's nginx vhost.
+          </p>
+          <form [formGroup]="addForm" (ngSubmit)="submitAdd()" class="dialog-form">
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Source Domain</mat-label>
+              <mat-icon matPrefix>language</mat-icon>
+              <mat-select formControlName="source_domain">
+                @for (d of domains(); track d) {
+                  <mat-option [value]="d">{{ d }}</mat-option>
+                }
+              </mat-select>
+              @if (addForm.get('source_domain')?.invalid && addForm.get('source_domain')?.touched) {
+                <mat-error>Select a domain</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Source Path</mat-label>
+              <mat-icon matPrefix>route</mat-icon>
+              <input matInput formControlName="source_path" placeholder="/old-page" />
+              <mat-hint>Must start with /</mat-hint>
+              @if (addForm.get('source_path')?.invalid && addForm.get('source_path')?.touched) {
+                <mat-error>Path is required</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Destination URL</mat-label>
+              <mat-icon matPrefix>open_in_new</mat-icon>
+              <input matInput formControlName="destination" placeholder="https://example.com/new-page" />
+              @if (addForm.get('destination')?.invalid && addForm.get('destination')?.touched) {
+                <mat-error>Destination is required</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Redirect Type</mat-label>
+              <mat-select formControlName="type">
+                <mat-option [value]="301">301 — Permanent</mat-option>
+                <mat-option [value]="302">302 — Temporary</mat-option>
+              </mat-select>
+            </mat-form-field>
+
+            <div class="dialog-actions">
+              <button mat-button type="button" (click)="showAddDialog.set(false)">Cancel</button>
+              <button mat-flat-button type="submit" [disabled]="addForm.invalid || isCreating()">
+                {{ isCreating() ? 'Creating…' : 'Add Redirect' }}
+              </button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+</div>

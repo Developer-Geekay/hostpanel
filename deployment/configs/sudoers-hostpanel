@@ -1,0 +1,31 @@
+# HostPanel sudoers rules
+# Grants the service user (ubuntu) passwordless sudo for only the specific
+# commands HostPanel needs. Install with:
+#   sudo cp sudoers-hostpanel /etc/sudoers.d/hostpanel
+#   sudo chmod 440 /etc/sudoers.d/hostpanel
+#   sudo visudo -cf /etc/sudoers.d/hostpanel   # verify syntax before applying
+
+ubuntu ALL=(root) NOPASSWD: \
+    /usr/sbin/useradd, \
+    /usr/sbin/userdel, \
+    /usr/sbin/usermod, \
+    /usr/sbin/chpasswd, \
+    /opt/hostpanel/nginx/sbin/nginx, \
+    /opt/hostpanel/ftp/bin/pure-pw, \
+    /bin/mkdir, \
+    /bin/chown, \
+    /bin/chmod, \
+    /bin/rm, \
+    /usr/bin/mysql, \
+    /usr/bin/certbot, \
+    /bin/systemctl start hostpanel-*, \
+    /bin/systemctl stop hostpanel-*, \
+    /bin/systemctl restart hostpanel-*, \
+    /bin/systemctl reload hostpanel-*, \
+    /bin/systemctl start mysql, \
+    /bin/systemctl stop mysql, \
+    /bin/systemctl restart mysql, \
+    /bin/systemctl enable --now certbot.timer, \
+    /bin/systemctl disable --now certbot.timer, \
+    /bin/systemctl is-active *, \
+    /usr/bin/journalctl

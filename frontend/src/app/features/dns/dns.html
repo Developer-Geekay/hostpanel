@@ -1,0 +1,468 @@
+<div class="page-container">
+
+  <!-- ── Page Tabs ───────────────────────────────────────────────────────────── -->
+  <div class="page-tabs" role="tablist" aria-label="DNS sections">
+    <button class="page-tab" role="tab" [class.active]="activeTab() === 'dns'" [attr.aria-selected]="activeTab() === 'dns'" (click)="switchTab('dns')">
+      <mat-icon aria-hidden="true">dns</mat-icon>
+      DNS Zones
+    </button>
+    <button class="page-tab" role="tab" [class.active]="activeTab() === 'redirects'" [attr.aria-selected]="activeTab() === 'redirects'" (click)="switchTab('redirects')">
+      <mat-icon aria-hidden="true">alt_route</mat-icon>
+      Redirects
+    </button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       DNS TAB
+  ════════════════════════════════════════════════════════════════════════════ -->
+  @if (activeTab() === 'dns') {
+
+    <!-- Zone List -->
+    @if (!selectedZone()) {
+      <div class="content-card">
+
+        <div class="cc-head">
+          <div>
+            <div class="cc-title">DNS Zones</div>
+            <div class="cc-sub">{{ zones().length }} zone{{ zones().length !== 1 ? 's' : '' }}</div>
+          </div>
+          <button mat-flat-button (click)="openAddZone()">
+            <mat-icon aria-hidden="true">add</mat-icon>
+            Add Zone
+          </button>
+        </div>
+
+        @if (isLoadingZones()) {
+          <div class="loading-container"><mat-spinner diameter="36" /></div>
+        }
+
+        @if (zoneError()) {
+          <div class="error-banner">
+            <mat-icon aria-hidden="true">error_outline</mat-icon>
+            {{ zoneError() }}
+            <button mat-button (click)="loadZones()">Retry</button>
+          </div>
+        }
+
+        @if (!isLoadingZones() && !zoneError()) {
+          <div class="table-container">
+            <table mat-table [dataSource]="zones()" class="full-width-table" aria-label="DNS zones">
+
+              <ng-container matColumnDef="name">
+                <th mat-header-cell *matHeaderCellDef>Zone</th>
+                <td mat-cell *matCellDef="let row">
+                  <button class="zone-link" mat-button (click)="openZone(row)">
+                    <mat-icon aria-hidden="true">dns</mat-icon>
+                    <span class="mono">{{ row.name }}</span>
+                  </button>
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="serial">
+                <th mat-header-cell *matHeaderCellDef class="hide-mobile">Serial</th>
+                <td mat-cell *matCellDef="let row" class="hide-mobile serial-text mono">{{ row.serial }}</td>
+              </ng-container>
+
+              <ng-container matColumnDef="actions">
+                <th mat-header-cell *matHeaderCellDef></th>
+                <td mat-cell *matCellDef="let row" class="actions-cell">
+                  <button mat-icon-button [matMenuTriggerFor]="zoneMenu" [attr.aria-label]="'Actions for ' + row.name" (click)="$event.stopPropagation()">
+                    <mat-icon aria-hidden="true">more_vert</mat-icon>
+                  </button>
+                  <mat-menu #zoneMenu="matMenu">
+                    <button mat-menu-item (click)="openZone(row)">
+                      <mat-icon aria-hidden="true">edit</mat-icon> Manage Records
+                    </button>
+                    <mat-divider />
+                    <button mat-menu-item class="danger-item" (click)="confirmDeleteZone(row)">
+                      <mat-icon aria-hidden="true">delete_outline</mat-icon> Delete Zone
+                    </button>
+                  </mat-menu>
+                </td>
+              </ng-container>
+
+              <tr mat-header-row *matHeaderRowDef="zoneColumns; sticky: true"></tr>
+              <tr mat-row *matRowDef="let row; columns: zoneColumns;" class="clickable-row" (click)="openZone(row)"></tr>
+              <tr class="mat-row" *matNoDataRow>
+                <td class="mat-cell empty-state" colspan="3">
+                  <mat-icon aria-hidden="true">dns</mat-icon>
+                  <p>No DNS zones yet. Add your first zone.</p>
+                </td>
+              </tr>
+            </table>
+          </div>
+        }
+
+      </div>
+    }
+
+    <!-- Zone Detail / Manage Records -->
+    @if (selectedZone()) {
+      <div class="content-card">
+
+        <div class="cc-head">
+          <div class="zone-header">
+            <button mat-icon-button (click)="backToZones()" matTooltip="Back to zones" aria-label="Back to zones">
+              <mat-icon aria-hidden="true">arrow_back</mat-icon>
+            </button>
+            <div>
+              <div class="cc-title mono">{{ selectedZone()!.name }}</div>
+              <div class="cc-sub">{{ records().length }} record{{ records().length !== 1 ? 's' : '' }}</div>
+            </div>
+          </div>
+          <button mat-flat-button (click)="openAddRecord()">
+            <mat-icon aria-hidden="true">add</mat-icon>
+            Add Record
+          </button>
+        </div>
+
+        @if (isLoadingRecords()) {
+          <div class="loading-container"><mat-spinner diameter="36" /></div>
+        }
+
+        @if (recordError()) {
+          <div class="error-banner">
+            <mat-icon aria-hidden="true">error_outline</mat-icon>
+            {{ recordError() }}
+            <button mat-button (click)="loadRecords(selectedZone()!.name)">Retry</button>
+          </div>
+        }
+
+        <!-- A record hint — shown when zone has no A record -->
+        @if (!isLoadingRecords() && !recordError() && !hasARecord()) {
+          <div class="a-record-hint" role="note">
+            <mat-icon aria-hidden="true">info_outline</mat-icon>
+            <div>
+              <strong>No A record found.</strong>
+              Add an <span class="mono">A</span> record pointing to your server IP so this domain resolves.
+              <button mat-button class="hint-btn" (click)="openAddRecord()">Add A record</button>
+            </div>
+          </div>
+        }
+
+        <!-- Record type filter tabs -->
+        @if (!isLoadingRecords() && !recordError()) {
+          <div class="record-filters" role="group" aria-label="Filter records by type">
+            @for (t of recordFilterTypes; track t) {
+              <button class="record-filter-tab"
+                [class.active]="recordTypeFilter() === t"
+                (click)="recordTypeFilter.set(t)"
+                [attr.aria-pressed]="recordTypeFilter() === t">
+                {{ t }}
+              </button>
+            }
+          </div>
+        }
+
+        @if (!isLoadingRecords() && !recordError()) {
+          <div class="table-container">
+            <table mat-table [dataSource]="filteredRecords()" class="full-width-table" [attr.aria-label]="selectedZone()!.name + ' DNS records'">
+
+              <ng-container matColumnDef="name">
+                <th mat-header-cell *matHeaderCellDef>Name</th>
+                <td mat-cell *matCellDef="let row" class="mono record-name">{{ row.name }}</td>
+              </ng-container>
+
+              <ng-container matColumnDef="type">
+                <th mat-header-cell *matHeaderCellDef>Type</th>
+                <td mat-cell *matCellDef="let row">
+                  <mat-chip class="type-chip type-{{ row.type }}" disableRipple>{{ row.type }}</mat-chip>
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="ttl">
+                <th mat-header-cell *matHeaderCellDef class="hide-mobile">TTL</th>
+                <td mat-cell *matCellDef="let row" class="hide-mobile ttl-text">{{ formatTtl(row.ttl) }}</td>
+              </ng-container>
+
+              <ng-container matColumnDef="content">
+                <th mat-header-cell *matHeaderCellDef>Value</th>
+                <td mat-cell *matCellDef="let row" class="mono content-text">{{ row.content }}</td>
+              </ng-container>
+
+              <ng-container matColumnDef="actions">
+                <th mat-header-cell *matHeaderCellDef></th>
+                <td mat-cell *matCellDef="let row" class="actions-cell">
+                  <button mat-icon-button class="danger-icon"
+                    (click)="confirmDeleteRecord(row)"
+                    matTooltip="Delete record"
+                    [attr.aria-label]="'Delete ' + row.type + ' record for ' + row.name">
+                    <mat-icon aria-hidden="true">delete_outline</mat-icon>
+                  </button>
+                </td>
+              </ng-container>
+
+              <tr mat-header-row *matHeaderRowDef="recordColumns; sticky: true"></tr>
+              <tr mat-row *matRowDef="let row; columns: recordColumns;"></tr>
+              <tr class="mat-row" *matNoDataRow>
+                <td class="mat-cell empty-state" colspan="5">
+                  <mat-icon aria-hidden="true">dns</mat-icon>
+                  <p>No records in this zone.</p>
+                </td>
+              </tr>
+            </table>
+          </div>
+        }
+
+      </div>
+    }
+
+  }
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       REDIRECTS TAB
+  ════════════════════════════════════════════════════════════════════════════ -->
+  @if (activeTab() === 'redirects') {
+    <div class="content-card">
+
+      <div class="cc-head">
+        <div>
+          <div class="cc-title">Redirects</div>
+          <div class="cc-sub">URL redirects embedded in your domain's nginx config</div>
+        </div>
+      </div>
+
+      <!-- Inline Add Redirect form -->
+      <div class="redirect-inline-form">
+        <form [formGroup]="addRedirectForm" (ngSubmit)="submitAddRedirect()" class="redirect-form-row">
+          <mat-form-field appearance="outline" class="rf-domain">
+            <mat-label>Source Domain</mat-label>
+            <mat-icon matPrefix aria-hidden="true">language</mat-icon>
+            <mat-select formControlName="source_domain">
+              @for (d of redirectDomains(); track d) {
+                <mat-option [value]="d">{{ d }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="rf-path">
+            <mat-label>Path</mat-label>
+            <span matTextPrefix>/</span>
+            <input matInput formControlName="source_path" placeholder="old-page" autocomplete="off" />
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="rf-dest">
+            <mat-label>Destination URL</mat-label>
+            <mat-icon matPrefix aria-hidden="true">open_in_new</mat-icon>
+            <input matInput formControlName="destination" placeholder="https://example.com/new" autocomplete="off" />
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="rf-type">
+            <mat-label>Type</mat-label>
+            <mat-select formControlName="type">
+              <mat-option [value]="301">301 Permanent</mat-option>
+              <mat-option [value]="302">302 Temporary</mat-option>
+            </mat-select>
+          </mat-form-field>
+          <button mat-flat-button type="submit" class="rf-submit" [disabled]="addRedirectForm.invalid || isCreatingRedirect()">
+            <mat-icon aria-hidden="true">add</mat-icon>
+            {{ isCreatingRedirect() ? 'Adding…' : 'Add' }}
+          </button>
+        </form>
+      </div>
+
+      @if (isLoadingRedirects()) {
+        <div class="loading-container"><mat-spinner diameter="36" /></div>
+      }
+
+      @if (redirectError()) {
+        <div class="error-banner">
+          <mat-icon aria-hidden="true">error_outline</mat-icon>
+          {{ redirectError() }}
+          <button mat-button (click)="loadRedirects()">Retry</button>
+        </div>
+      }
+
+      @if (!isLoadingRedirects() && !redirectError()) {
+        <div class="table-container">
+          <table mat-table [dataSource]="redirects()" class="full-width-table" aria-label="URL redirects">
+
+            <ng-container matColumnDef="source">
+              <th mat-header-cell *matHeaderCellDef>Source</th>
+              <td mat-cell *matCellDef="let row">
+                <div class="source-domain mono">{{ row.source_domain }}</div>
+                <div class="source-path mono">{{ row.source_path }}</div>
+              </td>
+            </ng-container>
+
+            <ng-container matColumnDef="destination">
+              <th mat-header-cell *matHeaderCellDef>Destination</th>
+              <td mat-cell *matCellDef="let row" class="mono dest-cell">{{ row.destination }}</td>
+            </ng-container>
+
+            <ng-container matColumnDef="type">
+              <th mat-header-cell *matHeaderCellDef>Type</th>
+              <td mat-cell *matCellDef="let row">
+                <mat-chip [class]="'status-chip ' + (row.type === 301 ? 'chip-301' : 'chip-302')" disableRipple>
+                  {{ row.type }}
+                </mat-chip>
+              </td>
+            </ng-container>
+
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef></th>
+              <td mat-cell *matCellDef="let row" class="actions-cell">
+                <button mat-icon-button class="danger-icon"
+                  (click)="deleteRedirect(row.id)"
+                  [disabled]="deletingRedirectId() === row.id"
+                  matTooltip="Delete redirect"
+                  [attr.aria-label]="'Delete redirect from ' + row.source_domain + row.source_path">
+                  <mat-icon aria-hidden="true">delete_outline</mat-icon>
+                </button>
+              </td>
+            </ng-container>
+
+            <tr mat-header-row *matHeaderRowDef="redirectColumns; sticky: true"></tr>
+            <tr mat-row *matRowDef="let row; columns: redirectColumns;"></tr>
+            <tr class="mat-row" *matNoDataRow>
+              <td class="mat-cell empty-state" colspan="4">
+                <mat-icon aria-hidden="true">alt_route</mat-icon>
+                <p>No redirects configured yet.</p>
+              </td>
+            </tr>
+          </table>
+        </div>
+      }
+
+    </div>
+  }
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       DIALOGS
+  ════════════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Add Zone -->
+  @if (showAddZoneDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-add-zone-title" (click)="showAddZoneDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-add-zone-title">Add DNS Zone</h2>
+          <p class="dialog-sub">Enter the domain you want to manage DNS for. After creating the zone, add an <span class="mono">A</span> record pointing to your server IP.</p>
+          <form [formGroup]="addZoneForm" (ngSubmit)="submitAddZone()" class="dialog-form">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Domain name</mat-label>
+              <mat-icon matPrefix aria-hidden="true">dns</mat-icon>
+              <input matInput formControlName="name" placeholder="example.com" autocomplete="off" />
+              @if (addZoneForm.get('name')?.invalid && addZoneForm.get('name')?.touched) {
+                <mat-error>Enter a valid domain (e.g. example.com)</mat-error>
+              }
+            </mat-form-field>
+            <div class="dialog-actions">
+              <button mat-button type="button" (click)="showAddZoneDialog.set(false)">Cancel</button>
+              <button mat-flat-button type="submit" [disabled]="addZoneForm.invalid || isSubmittingZone()">
+                {{ isSubmittingZone() ? 'Creating…' : 'Create Zone' }}
+              </button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+  <!-- Add Record -->
+  @if (showAddRecordDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-add-record-title" (click)="showAddRecordDialog.set(false)">
+      <mat-card class="inline-dialog wide-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-add-record-title">Add DNS Record</h2>
+          <p class="dialog-sub mono">{{ selectedZone()?.name }}</p>
+          <form [formGroup]="addRecordForm" (ngSubmit)="submitAddRecord()" class="dialog-form">
+
+            <!-- Name + Type row -->
+            <div class="record-row">
+              <mat-form-field appearance="outline" class="field-name">
+                <mat-label>Name</mat-label>
+                <input matInput formControlName="name" [placeholder]="selectedZone()?.name ?? 'example.com'" autocomplete="off" />
+                <mat-hint>Leave blank for zone apex ({{ selectedZone()?.name }}), or enter a subdomain label like www</mat-hint>
+                @if (addRecordForm.get('name')?.invalid && addRecordForm.get('name')?.touched) {
+                  <mat-error>Name is required</mat-error>
+                }
+              </mat-form-field>
+              <mat-form-field appearance="outline" class="field-type">
+                <mat-label>Type</mat-label>
+                <mat-select formControlName="type">
+                  @for (t of recordTypes; track t) {
+                    <mat-option [value]="t">
+                      <span class="record-type-option">
+                        <span class="mono">{{ t }}</span>
+                      </span>
+                    </mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            </div>
+
+            <!-- Value -->
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Value</mat-label>
+              <input matInput formControlName="content" [placeholder]="contentMeta.placeholder" autocomplete="off" />
+              @if (contentMeta.hint) {
+                <mat-hint>{{ contentMeta.hint }}</mat-hint>
+              }
+              @if (addRecordForm.get('content')?.invalid && addRecordForm.get('content')?.touched) {
+                <mat-error>Value is required</mat-error>
+              }
+            </mat-form-field>
+
+            <!-- TTL preset selector -->
+            <div class="ttl-row">
+              <mat-form-field appearance="outline" class="field-ttl-preset">
+                <mat-label>TTL</mat-label>
+                <mat-select [value]="selectedTtlPreset()" (valueChange)="onTtlPresetChange($event)">
+                  @for (p of ttlPresets; track p.value) {
+                    <mat-option [value]="p.value">{{ p.label }}</mat-option>
+                  }
+                </mat-select>
+                <mat-hint>Time-to-live — how long resolvers cache this record</mat-hint>
+              </mat-form-field>
+              @if (selectedTtlPreset() === -1) {
+                <mat-form-field appearance="outline" class="field-ttl-custom">
+                  <mat-label>Seconds</mat-label>
+                  <input matInput type="number" formControlName="ttl" placeholder="300" min="60" />
+                  <mat-hint>Minimum 60s</mat-hint>
+                </mat-form-field>
+              }
+            </div>
+
+            <div class="dialog-actions">
+              <button mat-button type="button" (click)="showAddRecordDialog.set(false)">Cancel</button>
+              <button mat-flat-button type="submit" [disabled]="addRecordForm.invalid || isSubmittingRecord()">
+                {{ isSubmittingRecord() ? 'Adding…' : 'Add Record' }}
+              </button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+  <!-- Delete Zone -->
+  @if (showDeleteZoneDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-delete-zone-title" (click)="showDeleteZoneDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-delete-zone-title">Delete DNS Zone</h2>
+          <p class="dialog-sub">All records in <strong class="mono">{{ zoneToDelete()?.name }}</strong> will be permanently deleted. This cannot be undone.</p>
+          <div class="dialog-actions">
+            <button mat-button type="button" (click)="showDeleteZoneDialog.set(false)">Cancel</button>
+            <button mat-flat-button color="warn" (click)="executeDeleteZone()">Delete Zone</button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+  <!-- Delete Record -->
+  @if (showDeleteRecordDialog()) {
+    <div class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-delete-record-title" (click)="showDeleteRecordDialog.set(false)">
+      <mat-card class="inline-dialog" (click)="$event.stopPropagation()" appearance="outlined">
+        <mat-card-content>
+          <h2 class="dialog-title" id="dlg-delete-record-title">Delete Record</h2>
+          <p class="dialog-sub">Delete <strong class="mono">{{ recordToDelete()?.type }}</strong> record for <strong class="mono">{{ recordToDelete()?.name }}</strong>?</p>
+          <div class="dialog-actions">
+            <button mat-button type="button" (click)="showDeleteRecordDialog.set(false)">Cancel</button>
+            <button mat-flat-button color="warn" (click)="executeDeleteRecord()">Delete</button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  }
+
+</div>

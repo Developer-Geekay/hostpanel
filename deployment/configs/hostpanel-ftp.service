@@ -1,0 +1,25 @@
+[Unit]
+Description=HostPanel FTP Server (pure-ftpd)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=forking
+ExecStart=/opt/hostpanel/ftp/sbin/pure-ftpd \
+  -l puredb:/opt/hostpanel/ftp/etc/pureftpd.pdb \
+  -A \
+  -E \
+  -B \
+  -H \
+  -u 1000 \
+  -p 40000:40100 \
+  -P YOUR_SERVER_PUBLIC_IP \
+  -C 5 \
+  -c 50 \
+  -I 15
+ExecStop=/bin/kill -QUIT $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

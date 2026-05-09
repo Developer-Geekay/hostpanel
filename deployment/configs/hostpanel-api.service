@@ -1,0 +1,18 @@
+[Unit]
+Description=HostPanel — API + Panel UI (port 2082)
+After=network.target
+# Panel is intentionally independent of Nginx — do NOT add Nginx as a dependency
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/hostpanel/backend
+EnvironmentFile=/opt/hostpanel/backend/.env
+Environment=FRONTEND_DIR=/opt/hostpanel/frontend
+ExecStart=/opt/hostpanel/backend/venv/bin/python main.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
