@@ -41,15 +41,23 @@ All services are built from source into `/opt/hostpanel/` — they do not confli
 
 Requires a fresh **Ubuntu 22.04 LTS** server.
 
+**Option 1 — one-liner on the server (recommended):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Developer-Geekay/hostpanel/main/install.sh | sudo bash
+```
+
+**Option 2 — manual:**
 ```bash
 # 1. Copy the setup script to your server
 scp deployment/setup.sh ubuntu@<your-server-ip>:/tmp/
 
 # 2. Run it on the server (builds everything from source, ~15 minutes)
 ssh ubuntu@<your-server-ip> "chmod +x /tmp/setup.sh && sudo /tmp/setup.sh"
+```
 
-# 3. Edit deploy.sh with your server IP and SSH key path, then run it
-#    from your local machine to deploy the panel
+After setup, deploy the panel code from your local machine:
+```bash
+# Edit deploy.sh with your server IP and SSH key path, then:
 cd deployment && ./deploy.sh
 ```
 
