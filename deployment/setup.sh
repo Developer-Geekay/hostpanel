@@ -310,6 +310,54 @@ step "7 / 7 — Start services"
 info "Starting PowerDNS..."
 systemctl start pdns || warn "PowerDNS failed to start — check: journalctl -u pdns"
 
+# Create initial DNS zone for SERVER_DOMAIN if provided
+if [[ -n "$SERVER_DOMAIN" ]]; then
+    sleep 1  # give pdns a moment to bind
+    info "Creating initial DNS zone for ${SERVER_DOMAIN}..."
+    python3 - << PYEOF
+import json, urllib.request, urllib.error, sys
+
+zone   = "${SERVER_DOMAIN}."
+ns1    = "${PDNS_NS1}"
+ns2    = "${PDNS_NS2}"
+ip     = "${SERVER_IP}"
+panel  = "${PANEL_SUBDOMAIN}"
+
+payload = {
+    "name": zone,
+    "kind": "Native",
+    "nameservers": [ns1, ns2],
+    "rrsets": [
+        {"name": zone, "type": "A", "ttl": 300, "changetype": "REPLACE",
+         "records": [{"content": ip, "disabled": False}]},
+        {"name": ns1,  "type": "A", "ttl": 300, "changetype": "REPLACE",
+         "records": [{"content": ip, "disabled": False}]},
+        {"name": ns2,  "type": "A", "ttl": 300, "changetype": "REPLACE",
+         "records": [{"content": ip, "disabled": False}]},
+        {"name": f"{panel}.{zone}", "type": "A", "ttl": 300, "changetype": "REPLACE",
+         "records": [{"content": ip, "disabled": False}]},
+    ]
+}
+
+req = urllib.request.Request(
+    "http://127.0.0.1:8053/api/v1/servers/localhost/zones",
+    data=json.dumps(payload).encode(),
+    headers={"X-API-Key": "hostpanel-dns-api-key", "Content-Type": "application/json"},
+    method="POST"
+)
+try:
+    urllib.request.urlopen(req)
+    print(f"[setup] Zone {zone} created — NS1, NS2, root A, {panel} A records added.")
+except urllib.error.HTTPError as e:
+    body = e.read().decode()
+    if "already exists" in body.lower():
+        print(f"[warn]  Zone {zone} already exists — skipping.")
+    else:
+        print(f"[warn]  Zone creation failed: {body}")
+        sys.exit(0)  # non-fatal
+PYEOF
+fi
+
 info "hostpanel-api will start automatically after deploy.sh is run."
 
 # =============================================================================
