@@ -88,8 +88,7 @@ skills-lock.json
 .agents/
 
 # Built package artifacts
-packages/hostpanel-ftp-*.zip
-packages/hostpanel_nginx/dist/
+packages/*
 dummy_plugin/build/
 
 # Backend logs
