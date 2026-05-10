@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        run: npx ng build --configuration production
+
+      - name: Package
+        run: tar -czf frontend.tar.gz -C frontend/dist/frontend/browser .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend
+          path: frontend.tar.gz
+
+  build-backend:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Build binary
+        working-directory: backend
+        run: python build.py
+
+      - name: Package
+        run: tar -czf backend.tar.gz -C backend/dist hostpanel-api
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend
+          path: backend.tar.gz
+
+  release:
+    needs: [build-frontend, build-backend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/frontend/frontend.tar.gz
+            artifacts/backend/backend.tar.gz
+          generate_release_notes: true
