@@ -90,7 +90,7 @@ async def install_package(request: PackageInstallRequest, background_tasks: Back
     try:
         # Run pip install
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", request.package_source],
+            [sys.executable, "-m", "pip", "install", "--upgrade", request.package_source],
             capture_output=True,
             text=True,
             check=True

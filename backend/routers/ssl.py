@@ -87,7 +87,11 @@ async def list_certs(current_user: User = Depends(get_current_user)):
     domains = _load_domains()
     if current_user.role != "admin":
         domains = [d for d in domains if d.get("username") == current_user.linux_user]
-    return [_cert_status_for(d["domain_name"]) for d in domains]
+    domain_names = [d["domain_name"] for d in domains]
+    server_domain = os.environ.get("SERVER_DOMAIN", "").strip().rstrip(".")
+    if current_user.role == "admin" and server_domain and server_domain not in domain_names:
+        domain_names.insert(0, server_domain)
+    return [_cert_status_for(name) for name in domain_names]
 
 
 @router.get("/renewal")
