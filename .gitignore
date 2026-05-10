@@ -97,3 +97,6 @@ backend/logs/
 
 # Frontend Claude config
 frontend/skills-lock.json
+
+
+instructions.md
