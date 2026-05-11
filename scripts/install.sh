@@ -304,7 +304,7 @@ info "systemd services installed and enabled."
 step "6 / 8 — Sudoers"
 # =============================================================================
 
-echo "${SERVICE_USER} ALL=(root) NOPASSWD: /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/chpasswd, /bin/mkdir, /bin/chown, /bin/chmod, /bin/rm, /usr/bin/tee, /usr/bin/certbot, /usr/bin/pip3, /opt/hostpanel/nginx/sbin/nginx, /usr/bin/systemctl start hostpanel-*, /usr/bin/systemctl stop hostpanel-*, /usr/bin/systemctl restart hostpanel-*, /usr/bin/systemctl reload hostpanel-*, /usr/bin/systemctl start pdns, /usr/bin/systemctl stop pdns, /usr/bin/systemctl restart pdns, /usr/bin/systemctl is-active *, /usr/bin/journalctl" > /etc/sudoers.d/hostpanel
+echo "${SERVICE_USER} ALL=(root) NOPASSWD: /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/chpasswd, /usr/bin/mkdir, /usr/bin/chown, /usr/bin/chmod, /usr/bin/cp, /usr/bin/rm, /usr/bin/tee, /usr/bin/certbot, /usr/bin/pip3, /opt/hostpanel/nginx/sbin/nginx, /usr/bin/systemctl, /usr/bin/journalctl" > /etc/sudoers.d/hostpanel
 chmod 440 /etc/sudoers.d/hostpanel
 visudo -cf /etc/sudoers.d/hostpanel
 

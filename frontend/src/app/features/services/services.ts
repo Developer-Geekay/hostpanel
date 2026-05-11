@@ -11,6 +11,9 @@ interface Service {
   name: string;
   unit: string;
   status: 'running' | 'stopped' | 'failed' | 'unknown';
+  label: string;
+  icon: string;
+  can_reload: boolean;
 }
 
 interface LogResponse {
@@ -18,14 +21,6 @@ interface LogResponse {
   unit: string;
   lines: string[];
 }
-
-const SERVICE_LABELS: Record<string, { label: string; icon: string; canReload: boolean }> = {
-  nginx:  { label: 'Web Server',  icon: 'public',    canReload: true  },
-  api:    { label: 'Panel API',   icon: 'api',        canReload: false },
-  dns:    { label: 'DNS Server',  icon: 'dns',        canReload: false },
-  ftp:    { label: 'FTP Server',  icon: 'swap_vert',  canReload: false },
-  mysql:  { label: 'MySQL',       icon: 'storage',    canReload: false },
-};
 
 @Component({
   selector: 'app-services',
@@ -65,9 +60,9 @@ export class ServicesComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   private headers() { return this.authService.getAuthHeaders(); }
 
-  serviceLabel(n: string) { return SERVICE_LABELS[n]?.label ?? n; }
-  serviceIcon(n: string)  { return SERVICE_LABELS[n]?.icon ?? 'settings'; }
-  canReload(n: string)    { return SERVICE_LABELS[n]?.canReload ?? false; }
+  serviceLabel(svc: Service) { return svc.label; }
+  serviceIcon(svc: Service)  { return svc.icon; }
+  canReload(svc: Service)    { return svc.can_reload; }
 
   ngOnInit() {
     this.load();
@@ -172,7 +167,8 @@ export class ServicesComponent implements OnInit, OnDestroy, AfterViewChecked {
           this.selectedLog.update(s => s ? { ...s, status: res.status as Service['status'] } : s);
         }
         this.actingOn.set(null);
-        this.snackBar.open(`${this.serviceLabel(name)} ${act}ed`, 'Dismiss', { duration: 2500 });
+        const label = this.services().find(s => s.name === name)?.label ?? name;
+        this.snackBar.open(`${label} ${act}ed`, 'Dismiss', { duration: 2500 });
       },
       error: (err) => {
         this.actingOn.set(null);

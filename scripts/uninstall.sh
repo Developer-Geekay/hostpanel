@@ -14,6 +14,8 @@ warn()  { echo -e "${YELLOW}[warn]${NC}      $*"; }
 section(){ echo -e "\n${CYAN}▸ $*${NC}"; }
 
 INSTALL_ROOT="/opt/hostpanel"
+# The non-root user who owns the hostpanel-api user service (if any)
+SERVICE_USER="${SUDO_USER:-$(logname 2>/dev/null || whoami)}"
 
 # ── Must run as root ──────────────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
@@ -50,17 +52,30 @@ fi
 # ── Stop and disable services ─────────────────────────────────────────────────
 section "Stopping services"
 
-SERVICES=(pdns hostpanel-api hostpanel-nginx hostpanel-ftp)
-for svc in "${SERVICES[@]}"; do
+# System-level services
+SYSTEM_SERVICES=(pdns hostpanel-api hostpanel-nginx hostpanel-ftp)
+for svc in "${SYSTEM_SERVICES[@]}"; do
     if systemctl is-active "$svc" --quiet 2>/dev/null; then
         systemctl stop "$svc"
-        info "Stopped $svc"
+        info "Stopped $svc (system)"
     fi
     if systemctl is-enabled "$svc" --quiet 2>/dev/null; then
         systemctl disable "$svc"
-        info "Disabled $svc"
+        info "Disabled $svc (system)"
     fi
 done
+
+# User-level hostpanel-api service (older installs run it as a user service)
+USER_SERVICE_FILE="/home/${SERVICE_USER}/.config/systemd/user/hostpanel-api.service"
+if [[ -f "$USER_SERVICE_FILE" ]]; then
+    su - "$SERVICE_USER" -c "
+        export XDG_RUNTIME_DIR=/run/user/\$(id -u)
+        systemctl --user stop hostpanel-api 2>/dev/null || true
+        systemctl --user disable hostpanel-api 2>/dev/null || true
+    " && info "Stopped and disabled hostpanel-api (user service)"
+    rm -f "$USER_SERVICE_FILE"
+    info "Removed $USER_SERVICE_FILE"
+fi
 
 # ── Remove systemd service files ──────────────────────────────────────────────
 section "Removing systemd service files"
@@ -68,7 +83,7 @@ section "Removing systemd service files"
 rm -f /etc/systemd/system/pdns.service
 rm -f /etc/systemd/system/hostpanel-*.service
 systemctl daemon-reload
-info "Service files removed."
+info "System service files removed."
 
 # ── Remove sudoers ────────────────────────────────────────────────────────────
 section "Removing sudoers"
@@ -95,7 +110,7 @@ rm -rf /tmp/hostpanel-build
 # ── Hosting users ─────────────────────────────────────────────────────────────
 section "Hosting users"
 
-HOSTING_USERS=$(awk -F: '$3 >= 1000 && $3 < 65534 && $1 != "ubuntu" && $1 != "nobody" { print $1 }' /etc/passwd)
+HOSTING_USERS=$(awk -F: -v svc="$SERVICE_USER" '$3 >= 1000 && $3 < 65534 && $1 != svc && $1 != "nobody" { print $1 }' /etc/passwd)
 
 if [[ -z "$HOSTING_USERS" ]]; then
     info "No hosting users found."

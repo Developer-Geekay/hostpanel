@@ -24,10 +24,10 @@
 
               <div class="svc-head">
                 <div class="svc-icon">
-                  <mat-icon>{{ serviceIcon(svc.name) }}</mat-icon>
+                  <mat-icon>{{ serviceIcon(svc) }}</mat-icon>
                 </div>
                 <div class="svc-meta">
-                  <div class="svc-name">{{ serviceLabel(svc.name) }}</div>
+                  <div class="svc-name">{{ serviceLabel(svc) }}</div>
                   <div class="svc-unit mono">{{ svc.unit }}</div>
                 </div>
                 <div class="svc-badge svc-badge--{{ svc.status }}">
@@ -54,7 +54,7 @@
                   @else { <mat-icon>refresh</mat-icon> }
                   Restart
                 </button>
-                @if (canReload(svc.name)) {
+                @if (canReload(svc)) {
                   <button mat-stroked-button
                     [disabled]="actingOn() === svc.name"
                     (click)="action(svc.name, 'reload')" matTooltip="Reload config without downtime">
@@ -86,10 +86,10 @@
             <mat-icon>arrow_back</mat-icon>
           </button>
           <div class="svc-icon svc-icon--sm">
-            <mat-icon>{{ serviceIcon(svc.name) }}</mat-icon>
+            <mat-icon>{{ serviceIcon(svc) }}</mat-icon>
           </div>
           <div>
-            <div class="cc-title">{{ serviceLabel(svc.name) }}</div>
+            <div class="cc-title">{{ serviceLabel(svc) }}</div>
             <div class="cc-sub mono">{{ svc.unit }}</div>
           </div>
           <div class="svc-badge svc-badge--{{ svc.status }}" style="margin-left:4px;">
