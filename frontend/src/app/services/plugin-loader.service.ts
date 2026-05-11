@@ -18,7 +18,8 @@ export class PluginLoaderService {
 
   pluginNavItems = signal<PluginNavItem[]>([]);
 
-  private readonly PLUGIN_COMPONENT_MAP: Record<string, () => Promise<Type<unknown>>> = {
+  // Native Angular components for packages that ship full Angular UIs
+  private readonly NATIVE_COMPONENT_MAP: Record<string, () => Promise<Type<unknown>>> = {
     'ftp': () => import('../features/ftp/ftp').then(m => m.FtpComponent),
     'domains': () => import('../features/domains/domains').then(m => m.DomainsComponent),
   };
@@ -33,19 +34,31 @@ export class PluginLoaderService {
         for (const pkg of packages) {
           for (const item of pkg.nav_items ?? []) {
             const routeKey = item.nav_route;
-            if (routeKey && this.PLUGIN_COMPONENT_MAP[routeKey]) {
+            if (!routeKey) continue;
+
+            if (this.NATIVE_COMPONENT_MAP[routeKey]) {
+              // Package has a native Angular component bundled in the main app
               pluginRoutes.push({
                 path: routeKey,
-                loadComponent: this.PLUGIN_COMPONENT_MAP[routeKey],
+                loadComponent: this.NATIVE_COMPONENT_MAP[routeKey],
               });
-              navItems.push({
-                route: routeKey,
-                label: item.nav_label,
-                icon: item.nav_icon,
-                section: item.nav_section,
-                adminOnly: item.admin_only,
+            } else {
+              // Package ships its own frontend/main.js — load it dynamically
+              pluginRoutes.push({
+                path: routeKey,
+                loadComponent: () =>
+                  import('../features/packages/shell/package-shell').then(m => m.PackageShellComponent),
+                data: { slug: routeKey },
               });
             }
+
+            navItems.push({
+              route: routeKey,
+              label: item.nav_label,
+              icon: item.nav_icon,
+              section: item.nav_section,
+              adminOnly: item.admin_only,
+            });
           }
         }
 
@@ -53,7 +66,10 @@ export class PluginLoaderService {
           const config = [...this.router.config];
           const appIdx = config.findIndex(r => r.path === 'app');
           if (appIdx !== -1 && config[appIdx].children) {
-            const knownPluginPaths = new Set(Object.keys(this.PLUGIN_COMPONENT_MAP));
+            const knownPluginPaths = new Set([
+              ...Object.keys(this.NATIVE_COMPONENT_MAP),
+              ...pluginRoutes.map(r => r.path ?? ''),
+            ]);
             const coreChildren = (config[appIdx].children ?? []).filter(
               r => !knownPluginPaths.has(r.path ?? '')
             );

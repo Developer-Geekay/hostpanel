@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
 from pydantic import BaseModel
 
 CORE_VERSION = (1, 0, 0)
+FRONTEND_DIR = os.environ.get("FRONTEND_DIR", "/opt/hostpanel/frontend")
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/cpanelapi/packages", tags=["Packages"])
@@ -218,6 +219,19 @@ async def upload_package(background_tasks: BackgroundTasks, file: UploadFile = F
                     unit = fname[:-8]  # strip .service
                     subprocess.run(["sudo", "systemctl", "enable", unit], check=False)
                     logs.append(f"Enabled service: {unit}")
+
+        # ── frontend/ → /opt/hostpanel/frontend/packages/<pkg_slug>/ ──────────
+        frontend_src = os.path.join(extract_dir, "frontend")
+        if os.path.isdir(frontend_src):
+            dest_frontend = os.path.join(FRONTEND_DIR, "packages", pkg_slug)
+            os.makedirs(dest_frontend, exist_ok=True)
+            for fname in os.listdir(frontend_src):
+                src = os.path.join(frontend_src, fname)
+                dst = os.path.join(dest_frontend, fname)
+                if os.path.isfile(src):
+                    shutil.copy2(src, dst)
+                    logs.append(f"Installed frontend asset: packages/{pkg_slug}/{fname}")
+                    logger.info(f"Installed frontend {fname} → {dst}")
 
         # ── hostpanel.setup → on_install hook ─────────────────────────────────
         import importlib
