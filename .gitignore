@@ -98,4 +98,4 @@ backend/logs/
 frontend/skills-lock.json
 
 
-instructions.md
+guides/*
