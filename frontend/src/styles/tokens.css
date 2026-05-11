@@ -88,38 +88,44 @@
   --shadow-accent: none;
 }
 
-/* ── Panel: Dense classic server control panel ─────────────────────────── */
+/* ── Panel: Sci-fi industrial control panel ────────────────────────────── */
 [data-theme="panel"] {
-  --bg:     #0d0d0f;
-  --bg-2:   #131316;
-  --bg-3:   #1c1c22;
-  --bg-inv: #f0f0f5;
+  --bg:     #070d14;
+  --bg-2:   #0b1420;
+  --bg-3:   #0f1d2e;
+  --bg-inv: #e8f4ff;
 
-  --border:   rgba(255,255,255,0.08);
-  --border-2: rgba(255,255,255,0.04);
+  --border:   rgba(0,212,180,0.18);
+  --border-2: rgba(0,212,180,0.08);
 
-  --text:   #c8c8d4;
-  --text-2: #6a6a7e;
-  --text-3: #38384a;
+  --text:   #a8d4e8;
+  --text-2: #4a7a96;
+  --text-3: #254560;
 
-  --ok:      #4ade80;  --ok-dim:   rgba(74,222,128,0.1);
-  --warn:    #facc15;  --warn-dim: rgba(250,204,21,0.1);
-  --err:     #f87171;  --err-dim:  rgba(248,113,113,0.1);
-  --info:    #60a5fa;  --info-dim: rgba(96,165,250,0.1);
+  --ok:      #00e5a0;  --ok-dim:   rgba(0,229,160,0.1);
+  --warn:    #f0b429;  --warn-dim: rgba(240,180,41,0.1);
+  --err:     #ff4d6a;  --err-dim:  rgba(255,77,106,0.1);
+  --info:    #00d4ff;  --info-dim: rgba(0,212,255,0.1);
 
-  --font-ui:   'DM Sans', sans-serif;
+  --font-ui:   'IBM Plex Mono', monospace;
   --font-mono: 'IBM Plex Mono', monospace;
 
-  --radius:    0px;
-  --radius-sm: 0px;
-  --radius-lg: 2px;
+  --radius:    2px;
+  --radius-sm: 2px;
+  --radius-lg: 4px;
 
   --row-h:     36px;
-  --sidebar-w: 210px;
+  --sidebar-w: 200px;
+  --topbar-h:  44px;
 
-  --shadow-sm: none;
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.7);
+  --shadow-sm: 0 0 0 1px rgba(0,212,180,0.12), 0 2px 8px rgba(0,0,0,0.6);
+  --shadow-md: 0 0 0 1px rgba(0,212,180,0.15), 0 4px 20px rgba(0,0,0,0.7);
+  --shadow-lg: 0 0 0 1px rgba(0,212,180,0.2),  0 8px 32px rgba(0,0,0,0.8);
+
+  /* Glow helpers */
+  --glow-accent: 0 0 12px var(--accent), 0 0 24px rgba(0,212,180,0.3);
+  --glow-ok:     0 0 8px rgba(0,229,160,0.5);
+  --glow-err:    0 0 8px rgba(255,77,106,0.5);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
