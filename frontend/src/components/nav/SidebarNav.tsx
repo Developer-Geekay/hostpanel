@@ -101,7 +101,6 @@ export function SidebarNav() {
 
       <div className="sidebar-footer">
         <ThemePicker />
-        <div className="divider" />
         <div className="user-row">
           <div className="user-avatar">{(user?.username?.[0] ?? 'A').toUpperCase()}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
