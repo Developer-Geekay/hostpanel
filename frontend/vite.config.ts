@@ -9,8 +9,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/cpanelapi': 'http://localhost:2082',
-      '/packages': 'http://localhost:2082',
+      '/cpanelapi': 'http://49.204.125.246:2082',
+      '/packages': 'http://49.204.125.246:2082',
     },
   },
 })

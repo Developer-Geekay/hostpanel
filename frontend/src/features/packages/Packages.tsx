@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Package, Plus, Trash2, Upload } from 'lucide-react';
-import { apiGet, apiPost, apiDelete, apiPostMultipart } from '../../lib/api';
+import { apiGet, apiPost, apiPostMultipart } from '../../lib/api';
 import { useToast } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
@@ -230,6 +230,8 @@ export default function Packages() {
               value={pipSource}
               onChange={e => setPipSource(e.target.value)}
               disabled={installing}
+              onKeyDown={e => { if (e.key === 'Enter') handleInstall(); }}
+              autoFocus
             />
           </div>
         ) : (
@@ -273,7 +275,12 @@ export default function Packages() {
         title="Uninstall Package"
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => { setUninstallTarget(null); setForceUninstall(false); }} disabled={uninstalling}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setUninstallTarget(null); setForceUninstall(false); }}
+              disabled={uninstalling}
+            >
               Cancel
             </Button>
             <Button

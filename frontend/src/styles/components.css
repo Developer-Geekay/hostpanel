@@ -48,6 +48,60 @@
 .spin-icon { animation: spin 0.65s linear infinite; }
 .spinner   { animation: spin 0.65s linear infinite; color: var(--accent); }
 
+/* ── Neumorphic button overrides ──────────────────────────────────────────── */
+[data-theme="neumorphic"] .btn {
+  border: none;
+  box-shadow: var(--shadow-sm);
+}
+[data-theme="neumorphic"] .btn:hover {
+  box-shadow: 3px 3px 7px #b8bec8, -2px -2px 5px #ffffff;
+}
+[data-theme="neumorphic"] .btn-primary {
+  box-shadow: 4px 4px 8px rgba(0,0,0,0.18), -2px -2px 6px rgba(255,255,255,0.5);
+}
+[data-theme="neumorphic"] .btn-primary:hover {
+  box-shadow: 5px 5px 10px rgba(0,0,0,0.22), -2px -2px 6px rgba(255,255,255,0.5);
+  filter: none;
+}
+[data-theme="neumorphic"] .btn-ghost {
+  background: var(--bg);
+  border: none;
+  box-shadow: var(--shadow-sm);
+  color: var(--accent);
+}
+[data-theme="neumorphic"] .btn-danger {
+  border: none;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Neumorphic sidebar ───────────────────────────────────────────────────── */
+[data-theme="neumorphic"] .sidebar {
+  border-right: none;
+  box-shadow: 4px 0 16px rgba(0,0,0,0.1);
+}
+[data-theme="neumorphic"] .sidebar-logo { border-bottom-color: rgba(0,0,0,0.08); }
+[data-theme="neumorphic"] .sidebar-footer { border-top-color: rgba(0,0,0,0.08); }
+[data-theme="neumorphic"] .logo-badge {
+  box-shadow: var(--shadow-sm);
+  border: none;
+}
+
+/* ── Neumorphic modal ─────────────────────────────────────────────────────── */
+[data-theme="neumorphic"] .modal {
+  border: none;
+  box-shadow: var(--shadow-lg);
+}
+[data-theme="neumorphic"] .modal-header { border-bottom-color: rgba(0,0,0,0.08); }
+[data-theme="neumorphic"] .modal-footer { border-top-color: rgba(0,0,0,0.08); }
+
+/* ── Neumorphic toggle ────────────────────────────────────────────────────── */
+[data-theme="neumorphic"] .toggle {
+  border: none;
+  box-shadow: var(--shadow-inset);
+  background: var(--bg);
+}
+[data-theme="neumorphic"] .toggle-on { background: var(--bg); }
+
 /* ── Modal ────────────────────────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed;

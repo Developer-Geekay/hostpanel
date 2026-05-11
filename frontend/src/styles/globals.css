@@ -278,37 +278,74 @@ select { cursor: pointer; }
 .animate-fade-in { animation: fadeIn 0.2s ease; }
 .animate-slide-in { animation: slideIn 0.2s ease; }
 
-/* ── Phosphor scanline effect ───────────────────────────────────────────────── */
-[data-theme="phosphor"] .page::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(57,255,20,0.015) 2px,
-    rgba(57,255,20,0.015) 4px
-  );
-  pointer-events: none;
-  z-index: 1;
+/* ── Neumorphic: remove borders, apply soft shadows ─────────────────────────── */
+[data-theme="neumorphic"] .card,
+[data-theme="neumorphic"] .stat-card {
+  border: none;
+  box-shadow: var(--shadow-md);
 }
 
-/* ── Console dot-grid atmosphere ─────────────────────────────────────────────── */
-[data-theme="console"] #root::before,
-[data-theme="phosphor"] #root::before {
+[data-theme="neumorphic"] .table-wrap {
+  border: none;
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
+}
+
+[data-theme="neumorphic"] th {
+  background: var(--bg-3);
+  border-bottom-color: rgba(0,0,0,0.08);
+}
+
+[data-theme="neumorphic"] td {
+  border-bottom-color: rgba(0,0,0,0.06);
+}
+
+[data-theme="neumorphic"] tr:hover td { background: rgba(255,255,255,0.3); }
+
+[data-theme="neumorphic"] input[type="text"],
+[data-theme="neumorphic"] input[type="email"],
+[data-theme="neumorphic"] input[type="password"],
+[data-theme="neumorphic"] input[type="number"],
+[data-theme="neumorphic"] input[type="search"],
+[data-theme="neumorphic"] select,
+[data-theme="neumorphic"] textarea {
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-inset);
+  background: var(--bg);
+}
+
+[data-theme="neumorphic"] input:focus,
+[data-theme="neumorphic"] select:focus,
+[data-theme="neumorphic"] textarea:focus {
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-inset), 0 0 0 2px var(--accent-dim);
+}
+
+[data-theme="neumorphic"] .nav-item.active {
+  box-shadow: var(--shadow-inset);
+  background: var(--bg);
+  border-left-color: var(--accent);
+}
+
+[data-theme="neumorphic"] .page-header { border-bottom-color: rgba(0,0,0,0.08); }
+
+/* ── Material: subtle dot-grid atmosphere ────────────────────────────────────── */
+[data-theme="material"] #root::before {
   content: '';
   position: fixed;
   inset: 0;
-  background-image: radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px);
-  background-size: 28px 28px;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.025) 1px, transparent 1px);
+  background-size: 32px 32px;
   pointer-events: none;
   z-index: 0;
 }
 
-/* ── Ivory subtle paper texture ─────────────────────────────────────────────── */
-[data-theme="ivory"] body {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='%23f5f3ef'/%3E%3Ccircle cx='1' cy='1' r='0.5' fill='%23e8e5df' opacity='0.4'/%3E%3C/svg%3E");
+/* ── Panel: compact density overrides ────────────────────────────────────────── */
+[data-theme="panel"] .page-header { padding-bottom: 14px; margin-bottom: 16px; }
+[data-theme="panel"] .page { padding: 20px 24px 32px; }
+[data-theme="panel"] .nav-section {
+  font-family: var(--font-mono);
+  letter-spacing: 0.12em;
 }
 
 /* ── Responsive ─────────────────────────────────────────────────────────────── */
