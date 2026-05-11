@@ -219,6 +219,28 @@ async def upload_package(background_tasks: BackgroundTasks, file: UploadFile = F
                     subprocess.run(["sudo", "systemctl", "enable", unit], check=False)
                     logs.append(f"Enabled service: {unit}")
 
+        # ── hostpanel.setup → on_install hook ─────────────────────────────────
+        import importlib
+        importlib.invalidate_caches()
+        try:
+            setup_eps = importlib.metadata.entry_points().select(group='hostpanel.setup')
+            for ep in setup_eps:
+                dist = ep.dist
+                if dist:
+                    dist_name = (dist.metadata.get('Name') or '').lower().replace('_', '-')
+                    pkg_name = file.filename.rsplit('-', 1)[0].lower()  # hostpanel-ftp-1.0.0.zip → hostpanel-ftp
+                    if dist_name == pkg_name or dist_name == f"hostpanel-{pkg_slug}":
+                        logger.info(f"Running on_install hook for {dist_name}")
+                        hook_func = ep.load()
+                        if asyncio.iscoroutinefunction(hook_func):
+                            await hook_func()
+                        else:
+                            hook_func()
+                        logs.append(f"on_install hook completed for {dist_name}")
+        except Exception as setup_err:
+            logger.warning(f"on_install hook failed: {setup_err}")
+            logs.append(f"Warning: on_install hook failed: {setup_err}")
+
         background_tasks.add_task(restart_server)
 
         return {
