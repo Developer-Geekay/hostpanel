@@ -11,7 +11,7 @@ interface PackageItem {
   version: string;
   description: string;
   compatible: boolean;
-  service?: string;
+  service?: string | { name: string; unit: string };
   nav_items?: string[];
 }
 
@@ -161,7 +161,7 @@ export default function Packages() {
                     }
                   </td>
                   <td className="mono" style={{ fontSize: 11.5, color: 'var(--text-2)' }}>
-                    {pkg.service ?? '—'}
+                    {typeof pkg.service === 'object' ? pkg.service.name : (pkg.service ?? '—')}
                   </td>
                   <td>
                     <Button

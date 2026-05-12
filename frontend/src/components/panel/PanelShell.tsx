@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Canvas }  from '@react-three/fiber';
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Suspense } from 'react';
 import {
   LayoutDashboard, Settings2, Package, Users, Globe, FolderOpen,
@@ -12,6 +12,23 @@ import { PanelFX }      from './PanelFX';
 import { useAuth }      from '../../lib/auth';
 import { useTheme }     from '../../lib/theme';
 import { ThemePicker }  from '../ui/ThemePicker';
+
+class CanvasErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean}> {
+  constructor(props: {children: React.ReactNode}) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: any, errorInfo: any) {
+    console.warn("WebGL Canvas crashed. This usually happens on reload when the context is lost:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
+}
 
 /* ── Nav node definitions ────────────────────────────────────────────────── */
 interface NavNode {
@@ -183,15 +200,17 @@ export function PanelShell() {
 
       {/* ── Three.js canvas ────────────────────────────────────────────── */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
-        <Canvas
-          camera={{ position: [0, 2.5, 8], fov: 48 }}
-          gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
-          dpr={[1, 1.5]}
-        >
-          <Suspense fallback={null}>
-            <ServerScene drawerOpen={drawerOpen} />
-          </Suspense>
-        </Canvas>
+        <CanvasErrorBoundary>
+          <Canvas
+            camera={{ position: [0, 2.5, 8], fov: 48 }}
+            gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
+            dpr={[1, 1.5]}
+          >
+            <Suspense fallback={null}>
+              <ServerScene drawerOpen={drawerOpen} />
+            </Suspense>
+          </Canvas>
+        </CanvasErrorBoundary>
       </div>
 
       {/* ── PanelFX: scan line + CRT + boot ────────────────────────────── */}
