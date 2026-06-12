@@ -1,0 +1,113 @@
+# General
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs / Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Python (Backend)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+!frontend/src/lib/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.pyre/
+
+# Node / Angular (Frontend)
+node_modules/
+dist/
+.angular/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+.npm
+
+
+# Deployment resources (large binaries — keep locally, not in git)
+deployment/resources/
+
+# Certificates / patches
+*.pem
+patch.tar.gz
+sample screens/
+
+# Internal dev notes (not for public repo)
+notes.txt
+PROGRESS.md
+UI_PLAN.md
+CLAUDE.md
+
+# Claude / AI session transcripts (may contain credentials)
+2026-*.txt
+*-this-session-*.txt
+*-conversation-*.txt
+
+# Claude Code / AI IDE metadata
+skills-lock.json
+.claude/*
+!.claude/skills/
+.gemini/
+.agents/
+
+# Built package artifacts
+packages/*
+dummy_plugin/build/
+
+# Backend logs
+backend/logs/
+
+# Runtime data — never commit credentials
+backend/portal_users.json
+
+# Frontend Claude config
+frontend/skills-lock.json
+
+
+guides/*
+.superpowers/*
+docs/*
