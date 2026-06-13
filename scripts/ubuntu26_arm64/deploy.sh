@@ -34,7 +34,7 @@ fi
 # Build SSH options
 SSH_OPTS="-p ${SERVER_PORT} -o StrictHostKeyChecking=no"
 if [[ -n "${SSH_KEY:-}" ]]; then
-    # Resolve relative SSH key paths with respect to where the user executes the command
+    SSH_KEY="$(cd "$(dirname "${SSH_KEY}")" 2>/dev/null && pwd)/$(basename "${SSH_KEY}")"
     SSH_OPTS="${SSH_OPTS} -i ${SSH_KEY}"
 fi
 
@@ -104,11 +104,19 @@ echo "Compiling Vite production build..."
 npm run build
 
 # ── 4. Sync frontend → FastAPI static dir ────────────────────────────────────
+# Two-pass sync: core files with --delete (safe), then packages/ without --delete
+# (so server-installed plugin dirs like packages/nginx/ are never wiped by deploy).
 echo -e "${GREEN}Syncing frontend → ${REMOTE_FRONTEND_DIR}...${NC}"
 rsync -avz --delete \
+    --exclude 'packages/' \
     -e "ssh ${SSH_OPTS}" \
     dist/ \
     ${SERVER_USER}@${SERVER_IP}:${REMOTE_FRONTEND_DIR}/
+
+rsync -avz \
+    -e "ssh ${SSH_OPTS}" \
+    dist/packages/ \
+    ${SERVER_USER}@${SERVER_IP}:${REMOTE_FRONTEND_DIR}/packages/
 
 echo ""
 echo -e "${GREEN}Done. Panel accessible at http://${SERVER_IP}:2082/${NC}"
