@@ -32,7 +32,9 @@ from auth import User
 from deps import get_current_user
 from domain_registry import _load_domains, check_domain_access
 from hooks import call_hooks
-from routers.dns_credentials import get_cloudflare_ini_path
+from routers.dns_credentials import get_token_for_user
+
+HOOKS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "hooks")
 
 router = APIRouter(prefix="/cpanelapi/ssl", tags=["SSL"])
 logger = logging.getLogger(__name__)
@@ -242,13 +244,17 @@ async def issue_cert(request: IssueRequest, current_user: User = Depends(get_cur
     domain = request.domain
 
     if request.validation_method == "dns-01":
-        ini_path = get_cloudflare_ini_path(current_user.linux_user)
-        if not ini_path:
+        token = get_token_for_user(current_user.linux_user)
+        if not token:
             raise HTTPException(status_code=400,
-                                detail="No Cloudflare DNS credentials configured. Add them under SSL → DNS Credentials.")
+                                detail="No DNS credentials configured. Add them under SSL → DNS Credentials.")
+        auth_hook    = f"python3 {HOOKS_DIR}/cf_auth.py {token}"
+        cleanup_hook = f"python3 {HOOKS_DIR}/cf_cleanup.py {token}"
         cmd = ["sudo", "certbot", "certonly",
-               "--dns-cloudflare", "--dns-cloudflare-credentials", ini_path,
-               "--dns-cloudflare-propagation-seconds", "30",
+               "--manual", "--preferred-challenges", "dns",
+               "--manual-auth-hook",    auth_hook,
+               "--manual-cleanup-hook", cleanup_hook,
+               "--manual-public-ip-logging-ok",
                "-d", domain, "--cert-name", domain]
         if request.wildcard:
             cmd += ["-d", f"*.{domain}"]

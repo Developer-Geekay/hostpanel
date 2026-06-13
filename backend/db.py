@@ -62,6 +62,13 @@ CREATE TABLE IF NOT EXISTS audit_log (
     detail   TEXT,
     status   TEXT    NOT NULL DEFAULT 'ok'
 );
+
+CREATE TABLE IF NOT EXISTS dns_credentials (
+    linux_user TEXT PRIMARY KEY,
+    provider   TEXT NOT NULL,
+    api_token  TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
 """
 
 
