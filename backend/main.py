@@ -240,5 +240,5 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PANEL_PORT", "2082"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    port = int(os.environ.get("PANEL_BACKEND_PORT", "2081"))
+    uvicorn.run(app, host="127.0.0.1", port=port)

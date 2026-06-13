@@ -1,5 +1,35 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&family=IBM+Plex+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500&family=DM+Mono:wght@400;500&display=swap');
 
+@font-face {
+  font-family: 'Sportifity';
+  src: url('../assets/fonts/sportifity/SPORTIFITY.otf') format('opentype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Rukyltronic';
+  src: url('../assets/fonts/rukyltronic/rukyltronic star.otf') format('opentype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Swap Souce';
+  src: url('../assets/fonts/swap-souce/Swap Souce.otf') format('opentype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JHC Sineas';
+  src: url('../assets/fonts/jhc-sineas/JHCSineas-SemiboldItalic.otf') format('opentype');
+  font-weight: 600;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JHC Sineas';
+  src: url('../assets/fonts/jhc-sineas/JHCSineas-Extralight.otf') format('opentype');
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ── Accent color defaults (overridden by [data-color]) ─────────────────── */
 :root {
   --accent:        #3b82f6;
@@ -10,6 +40,7 @@
   --border-focus:  rgba(59,130,246,0.5);
   --shadow-accent: 0 0 20px rgba(59,130,246,0.18);
   --transition:    150ms ease;
+  --font-logo:     'Sportifity', var(--font-mono);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

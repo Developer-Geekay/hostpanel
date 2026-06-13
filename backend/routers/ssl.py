@@ -42,7 +42,8 @@ logger = logging.getLogger(__name__)
 LETSENCRYPT_DIR = "/etc/letsencrypt/live"
 CERTBOT_EMAIL   = os.environ.get("CERTBOT_EMAIL", "admin@hostpanel.local")
 VHOSTS_DIR      = "/opt/hostpanel/plugins/nginx/vhosts"
-CERTBOT_LOG_DIR = "/tmp/hostpanel-ssl-logs"
+CERTBOT_LOG_DIR  = "/tmp/hostpanel-ssl-logs"
+CUSTOM_CERTS_DIR = "/opt/hostpanel/custom-certs"
 
 
 class CertStatus(BaseModel):
@@ -54,6 +55,7 @@ class CertStatus(BaseModel):
     sans: List[str] = []
     https_forced: bool
     is_wildcard: bool = False
+    source: str = "none"  # none|letsencrypt|imported
 
 class IssueRequest(BaseModel):
     domain: str
@@ -66,6 +68,11 @@ class RenewalRequest(BaseModel):
 
 class ForceHttpsRequest(BaseModel):
     enabled: bool
+
+class ImportRequest(BaseModel):
+    cert_pem: str
+    key_pem: str
+    chain_pem: str
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -88,8 +95,15 @@ def _cert_readable(domain: str) -> bool:
 
 
 def _read_cert_bytes(domain: str) -> Optional[bytes]:
-    """Return raw cert bytes via sudo cat, or None if unreadable."""
+    """Return Let's Encrypt cert bytes via sudo cat, or None if unreadable."""
     cert_path = f"{LETSENCRYPT_DIR}/{domain}/fullchain.pem"
+    r = subprocess.run(["sudo", "-n", "cat", cert_path], capture_output=True, timeout=10)
+    return r.stdout if r.returncode == 0 else None
+
+
+def _read_custom_cert_bytes(domain: str) -> Optional[bytes]:
+    """Return imported cert bytes from custom-certs dir, or None if not present."""
+    cert_path = os.path.join(CUSTOM_CERTS_DIR, domain, "fullchain.pem")
     r = subprocess.run(["sudo", "-n", "cat", cert_path], capture_output=True, timeout=10)
     return r.stdout if r.returncode == 0 else None
 
@@ -128,6 +142,27 @@ def _cert_sans(cert_bytes: bytes) -> List[str]:
         return []
 
 
+def _cert_issuer(cert_bytes: bytes) -> Optional[str]:
+    try:
+        result = subprocess.run(
+            ["openssl", "x509", "-noout", "-issuer"],
+            input=cert_bytes, capture_output=True, timeout=10
+        )
+        if result.returncode != 0:
+            return None
+        line = result.stdout.decode().strip()
+        if "Let" in line and "Encrypt" in line:
+            return "Let's Encrypt"
+        for part in line.replace("issuer=", "").split(","):
+            part = part.strip()
+            if part.startswith("O =") or part.startswith("O="):
+                return part.split("=", 1)[1].strip()
+        return None
+    except Exception as e:
+        logger.warning(f"Could not parse cert issuer: {e}")
+        return None
+
+
 def _log_derived_status(domain: str) -> str:
     """Read certbot log and return 'pending', 'failed', or 'none'."""
     log_path = os.path.join(CERTBOT_LOG_DIR, f"{domain}.log")
@@ -136,9 +171,10 @@ def _log_derived_status(domain: str) -> str:
     try:
         with open(log_path) as f:
             content = f.read()
-        if any(k in content for k in ("Error", "error", "FAILED", "Failed",
+        if any(k in content for k in ("Error", "error", "FAILED", "Failed", "failed",
                                        "Problem binding", "Could not", "Unable to",
-                                       "Challenge failed")):
+                                       "Challenge failed", "challenges have failed",
+                                       "NXDOMAIN", "unauthorized", "DNS problem")):
             return "failed"
         return "pending"
     except Exception:
@@ -147,6 +183,24 @@ def _log_derived_status(domain: str) -> str:
 
 def _cert_status_for(domain: str) -> CertStatus:
     https_forced = _is_https_forced(domain)
+
+    # Check imported cert first — takes priority over Let's Encrypt
+    custom_bytes = _read_custom_cert_bytes(domain)
+    if custom_bytes:
+        expiry = _cert_expiry(custom_bytes)
+        if expiry:
+            now = datetime.datetime.utcnow()
+            days = (expiry - now).days
+            status = "expired" if days < 0 else "expiring_soon" if days < 30 else "valid"
+            sans = _cert_sans(custom_bytes)
+            return CertStatus(
+                domain=domain, status=status,
+                expiry=expiry.strftime("%Y-%m-%d"), days_remaining=days,
+                issuer=_cert_issuer(custom_bytes), sans=sans,
+                https_forced=https_forced,
+                is_wildcard=any(s.startswith("*.") for s in sans),
+                source="imported",
+            )
 
     # Certbot may store wildcard certs under _wildcard.{domain} if --cert-name wasn't forced.
     # Check both names; prefer {domain}.
@@ -157,7 +211,7 @@ def _cert_status_for(domain: str) -> CertStatus:
         if os.path.exists(revoked_path):
             return CertStatus(domain=domain, status="revoked", expiry=None,
                               days_remaining=None, issuer=None, sans=[],
-                              https_forced=https_forced)
+                              https_forced=https_forced, source="none")
 
     cert_bytes = None
     for cert_name in cert_names:
@@ -169,13 +223,13 @@ def _cert_status_for(domain: str) -> CertStatus:
         status = _log_derived_status(domain)
         return CertStatus(domain=domain, status=status, expiry=None,
                           days_remaining=None, issuer=None, sans=[],
-                          https_forced=https_forced)
+                          https_forced=https_forced, source="none")
 
     expiry = _cert_expiry(cert_bytes)
     if expiry is None:
         return CertStatus(domain=domain, status="none", expiry=None,
                           days_remaining=None, issuer=None, sans=[],
-                          https_forced=https_forced)
+                          https_forced=https_forced, source="none")
 
     now = datetime.datetime.utcnow()
     days = (expiry - now).days
@@ -187,7 +241,7 @@ def _cert_status_for(domain: str) -> CertStatus:
         domain=domain, status=status,
         expiry=expiry.strftime("%Y-%m-%d"), days_remaining=days,
         issuer="Let's Encrypt", sans=sans, https_forced=https_forced,
-        is_wildcard=is_wildcard,
+        is_wildcard=is_wildcard, source="letsencrypt",
     )
 
 
@@ -259,7 +313,11 @@ async def issue_cert(request: IssueRequest, current_user: User = Depends(get_cur
         is_apex = domain.count('.') == 1
         cmd = ["sudo", "certbot", "certonly", "--webroot", "-w", record["document_root"], "-d", domain]
         if is_apex:
-            cmd += ["-d", f"www.{domain}", "-d", f"cpanel.{domain}", "-d", f"ftp.{domain}"]
+            cmd += ["-d", f"www.{domain}"]
+            # cpanel subdomain uses the same webroot (nginx cpanel vhost serves ACME from there)
+            cpanel_vhost = f"{VHOSTS_DIR}/cpanel.{domain}.conf"
+            if os.path.exists(cpanel_vhost):
+                cmd += ["-d", f"cpanel.{domain}"]
         for san in request.additional_domains:
             cmd += ["-d", san]
         cmd += ["--non-interactive", "--agree-tos", "--email", CERTBOT_EMAIL,
@@ -300,6 +358,65 @@ async def renew_cert(domain: str, current_user: User = Depends(get_current_user)
     return {"domain": domain, "status": "pending", "message": "certbot renew started in background"}
 
 
+@router.post("/{domain}/import")
+async def import_cert(domain: str, request: ImportRequest, current_user: User = Depends(get_current_user)):
+    """Install a commercial/custom certificate from PEM strings."""
+    domains = _load_domains()
+    record = next((d for d in domains if d["domain_name"] == domain), None)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Domain '{domain}' not provisioned.")
+    check_domain_access(record, current_user)
+
+    for label, pem in [("cert_pem", request.cert_pem), ("key_pem", request.key_pem), ("chain_pem", request.chain_pem)]:
+        if "-----BEGIN" not in pem:
+            raise HTTPException(status_code=400, detail=f"{label} does not appear to be valid PEM")
+
+    cert_check = subprocess.run(
+        ["openssl", "x509", "-noout"],
+        input=request.cert_pem.encode(), capture_output=True, timeout=10
+    )
+    if cert_check.returncode != 0:
+        raise HTTPException(status_code=400, detail="cert_pem is not a valid certificate")
+
+    cert_dir = os.path.join(CUSTOM_CERTS_DIR, domain)
+    try:
+        r = subprocess.run(["sudo", "mkdir", "-p", cert_dir], capture_output=True, timeout=10)
+        if r.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Failed to create cert directory: {r.stderr.decode().strip()}")
+
+        fullchain = request.cert_pem.strip() + "\n" + request.chain_pem.strip() + "\n"
+        files = {
+            "cert.pem":     request.cert_pem,
+            "privkey.pem":  request.key_pem,
+            "chain.pem":    request.chain_pem,
+            "fullchain.pem": fullchain,
+        }
+        for filename, content in files.items():
+            proc = subprocess.run(
+                ["sudo", "tee", os.path.join(cert_dir, filename)],
+                input=content.encode(), capture_output=True, timeout=10
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=500, detail=f"Failed to write {filename}")
+        subprocess.run(["sudo", "chmod", "600", os.path.join(cert_dir, "privkey.pem")],
+                       capture_output=True, timeout=5)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Clear any revoked sentinel so status reflects the new cert
+    revoked_path = os.path.join(CERTBOT_LOG_DIR, f"{domain}.revoked")
+    if os.path.exists(revoked_path):
+        try: os.remove(revoked_path)
+        except Exception: pass
+
+    await call_hooks("hostpanel.hooks.ssl_cert_imported",
+                     domain=domain, cert_dir=cert_dir, doc_root=record["document_root"])
+    log_action(current_user.username, "ssl.import", resource=domain)
+    return {"domain": domain, "status": "imported", "cert_dir": cert_dir}
+
+
 @router.get("/{domain}/log")
 async def get_cert_log(domain: str, current_user: User = Depends(get_current_user)):
     domains = _load_domains()
@@ -319,8 +436,10 @@ async def get_cert_log(domain: str, current_user: User = Depends(get_current_use
 
     if "Congratulations" in content or "Successfully received certificate" in content:
         status = "success"
-    elif any(k in content for k in ("Error", "error", "FAILED", "Failed", "Problem binding",
-                                    "Could not", "Unable to", "Challenge failed")):
+    elif any(k in content for k in ("Error", "error", "FAILED", "Failed", "failed",
+                                    "Problem binding", "Could not", "Unable to",
+                                    "Challenge failed", "challenges have failed",
+                                    "NXDOMAIN", "unauthorized", "DNS problem")):
         status = "error"
     else:
         status = "running"
@@ -334,13 +453,24 @@ async def revoke_cert(domain: str, current_user: User = Depends(get_current_user
     record = next((d for d in domains if d["domain_name"] == domain), None)
     if record:
         check_domain_access(record, current_user)
-    if not _cert_readable(domain):
+
+    custom_dir = os.path.join(CUSTOM_CERTS_DIR, domain)
+    has_custom = _read_custom_cert_bytes(domain) is not None
+    has_le     = _cert_readable(domain)
+
+    if not has_custom and not has_le:
         raise HTTPException(status_code=404, detail=f"No certificate found for '{domain}'.")
-    try:
-        subprocess.run(["sudo", "certbot", "delete", "--cert-name", domain, "--non-interactive"],
-                       check=True, capture_output=True, text=True, timeout=30)
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"certbot error: {e.stderr.strip()}")
+
+    if has_custom:
+        r = subprocess.run(["sudo", "rm", "-rf", custom_dir], capture_output=True, timeout=10)
+        if r.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Failed to remove cert directory: {r.stderr.decode().strip()}")
+    else:
+        try:
+            subprocess.run(["sudo", "certbot", "delete", "--cert-name", domain, "--non-interactive"],
+                           check=True, capture_output=True, text=True, timeout=30)
+        except subprocess.CalledProcessError as e:
+            raise HTTPException(status_code=500, detail=f"certbot error: {e.stderr.strip()}")
 
     # Write revoked sentinel so list_certs returns status=revoked
     os.makedirs(CERTBOT_LOG_DIR, exist_ok=True)
@@ -364,7 +494,7 @@ async def toggle_force_https(domain: str, request: ForceHttpsRequest,
     if not record:
         raise HTTPException(status_code=404, detail=f"Domain '{domain}' not found.")
     check_domain_access(record, current_user)
-    if request.enabled and not _cert_readable(domain):
+    if request.enabled and not (_cert_readable(domain) or _read_custom_cert_bytes(domain) is not None):
         raise HTTPException(status_code=400, detail="Cannot enable Force HTTPS: no active SSL certificate.")
     await call_hooks("hostpanel.hooks.ssl_force_https",
                      domain=domain, enabled=request.enabled, doc_root=record["document_root"])

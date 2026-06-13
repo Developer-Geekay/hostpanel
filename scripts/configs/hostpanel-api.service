@@ -1,13 +1,14 @@
 [Unit]
-Description=HostPanel — API + Panel UI (port 2082)
+Description=HostPanel — API + Panel UI (nginx proxies 2082→127.0.0.1:2081)
 After=network.target
 # Panel is intentionally independent of Nginx — do NOT add Nginx as a dependency
 
 [Service]
-User=ubuntu
+User=geekay
 WorkingDirectory=/opt/hostpanel/backend
 EnvironmentFile=/opt/hostpanel/backend/.env
 Environment=FRONTEND_DIR=/opt/hostpanel/frontend
+Environment=PANEL_BACKEND_PORT=2081
 ExecStart=/opt/hostpanel/backend/venv/bin/python main.py
 Restart=on-failure
 RestartSec=5

@@ -400,11 +400,15 @@
   border-radius: var(--radius-sm);
   display: grid;
   place-items: center;
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font-family: var(--font-logo);
+  font-size: 15px;
+  letter-spacing: 0.02em;
   color: var(--accent);
   margin-bottom: 12px;
+  transition: background var(--transition), transform 80ms ease;
+  user-select: none;
 }
+.rail-logo:active { transform: scale(0.9); }
 
 .rail-item {
   position: relative;

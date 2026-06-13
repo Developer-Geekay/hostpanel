@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, Trash2, RefreshCw, ShieldCheck, ChevronRight, ChevronDown, Loader2 } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, ShieldCheck, ChevronRight, ChevronDown, Loader2, Upload } from 'lucide-react';
 import { apiGet, apiPost, apiPut, apiDelete } from '../../lib/api';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -21,6 +21,7 @@ interface CertStatus {
   sans: string[];
   https_forced: boolean;
   is_wildcard: boolean;
+  source: 'none' | 'letsencrypt' | 'imported';
 }
 
 function StatusBadge({ cert }: { cert: CertStatus }) {
@@ -56,6 +57,13 @@ export default function Ssl() {
   const [deleteTarget, setDeleteTarget]   = useState('');
   const [deleting, setDeleting]           = useState(false);
   const [togglingHttps, setTogglingHttps] = useState<string | null>(null);
+
+  // Import modal
+  const [importDomain, setImportDomain]   = useState('');
+  const [importCert, setImportCert]       = useState('');
+  const [importKey, setImportKey]         = useState('');
+  const [importChain, setImportChain]     = useState('');
+  const [importing, setImporting]         = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -181,6 +189,32 @@ export default function Ssl() {
     }
   }
 
+  function openImport(domain: string) {
+    setImportDomain(domain); setImportCert(''); setImportKey(''); setImportChain('');
+  }
+
+  function closeImport() {
+    setImportDomain(''); setImportCert(''); setImportKey(''); setImportChain('');
+  }
+
+  async function submitImport() {
+    setImporting(true);
+    try {
+      await apiPost(`ssl/${importDomain}/import`, {
+        cert_pem: importCert.trim(),
+        key_pem: importKey.trim(),
+        chain_pem: importChain.trim(),
+      });
+      toast.ok(`Certificate for ${importDomain} imported`);
+      closeImport();
+      load();
+    } catch (err: unknown) {
+      toast.err(err instanceof Error ? err.message : 'Failed to import certificate');
+    } finally {
+      setImporting(false);
+    }
+  }
+
   const inProgress = certLog !== null;
   const modalTitle = inProgress
     ? `${modalMode === 'renew' ? 'Renewing' : 'Issuing'} — ${issueDomain}`
@@ -262,14 +296,25 @@ export default function Ssl() {
                         <div className="actions">
                           {c.status === 'pending' && <span style={{ fontSize: 12, color: 'var(--text-3)' }}>In progress…</span>}
                           {(c.status === 'none' || c.status === 'revoked') && (
-                            <Button variant="ghost" size="sm" icon={<Plus size={12} strokeWidth={1.5} />} onClick={() => openIssue(c.domain)}>Issue</Button>
+                            <>
+                              <Button variant="ghost" size="sm" icon={<Plus size={12} strokeWidth={1.5} />} onClick={() => openIssue(c.domain)}>Issue</Button>
+                              <Button variant="ghost" size="sm" icon={<Upload size={12} strokeWidth={1.5} />} onClick={() => openImport(c.domain)}>Import</Button>
+                            </>
                           )}
                           {c.status === 'failed' && (
-                            <Button variant="ghost" size="sm" icon={<RefreshCw size={12} strokeWidth={1.5} />} onClick={() => openIssue(c.domain)}>Retry</Button>
+                            <>
+                              <Button variant="ghost" size="sm" icon={<RefreshCw size={12} strokeWidth={1.5} />} onClick={() => openIssue(c.domain)}>Retry</Button>
+                              <Button variant="ghost" size="sm" icon={<Upload size={12} strokeWidth={1.5} />} onClick={() => openImport(c.domain)}>Import</Button>
+                            </>
                           )}
                           {(c.status === 'valid' || c.status === 'expiring_soon' || c.status === 'expired') && (
                             <>
-                              <Button variant="ghost" size="sm" icon={<RefreshCw size={12} strokeWidth={1.5} />} onClick={() => openRenew(c.domain)}>Renew</Button>
+                              {c.source === 'letsencrypt' && (
+                                <Button variant="ghost" size="sm" icon={<RefreshCw size={12} strokeWidth={1.5} />} onClick={() => openRenew(c.domain)}>Renew</Button>
+                              )}
+                              {c.source === 'imported' && (
+                                <Button variant="ghost" size="sm" icon={<Upload size={12} strokeWidth={1.5} />} onClick={() => openImport(c.domain)}>Replace</Button>
+                              )}
                               <Button variant="danger" size="sm" icon={<Trash2 size={12} strokeWidth={1.5} />} onClick={() => setDeleteTarget(c.domain)} />
                             </>
                           )}
@@ -279,7 +324,15 @@ export default function Ssl() {
                     isExpanded && hasSans && (
                       <tr key={`${c.domain}-sans`} style={{ background: 'var(--bg-2)' }}>
                         <td colSpan={6} style={{ paddingLeft: 32, paddingTop: 6, paddingBottom: 10 }}>
-                          <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>Subject Alternative Names</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Subject Alternative Names</span>
+                            {c.source === 'letsencrypt' && (
+                              <span style={{ fontSize: 10, color: '#3b82f6', border: '1px solid #3b82f644', background: '#3b82f611', borderRadius: 3, padding: '1px 5px' }}>Let's Encrypt</span>
+                            )}
+                            {c.source === 'imported' && (
+                              <span style={{ fontSize: 10, color: '#a855f7', border: '1px solid #a855f744', background: '#a855f711', borderRadius: 3, padding: '1px 5px' }}>Custom</span>
+                            )}
+                          </div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px' }}>
                             {c.sans.map(san => (
                               <span key={san} className="mono" style={{ fontSize: 11, background: 'var(--bg-3)', border: '1px solid var(--border-2)', borderRadius: 4, padding: '2px 7px' }}>{san}</span>
@@ -370,6 +423,65 @@ export default function Ssl() {
             </p>
           </>
         )}
+      </Modal>
+
+      {/* Import Certificate modal */}
+      <Modal
+        open={!!importDomain}
+        onClose={() => { if (!importing) closeImport(); }}
+        title={`Import Certificate — ${importDomain}`}
+        width={520}
+        footer={
+          <div className="actions" style={{ justifyContent: 'flex-end' }}>
+            <Button variant="ghost" size="sm" onClick={closeImport} disabled={importing}>Cancel</Button>
+            <Button
+              variant="primary" size="sm" loading={importing}
+              disabled={!importCert.trim() || !importKey.trim() || !importChain.trim()}
+              onClick={submitImport}
+            >
+              Install Certificate
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="field">
+            <label>Certificate (cert.pem)</label>
+            <textarea
+              value={importCert}
+              onChange={e => setImportCert(e.target.value)}
+              placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+              rows={5}
+              disabled={importing}
+              style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, resize: 'vertical' }}
+            />
+          </div>
+          <div className="field">
+            <label>Private Key (privkey.pem)</label>
+            <textarea
+              value={importKey}
+              onChange={e => setImportKey(e.target.value)}
+              placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"
+              rows={5}
+              disabled={importing}
+              style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, resize: 'vertical' }}
+            />
+          </div>
+          <div className="field">
+            <label>CA Chain (chain.pem)</label>
+            <textarea
+              value={importChain}
+              onChange={e => setImportChain(e.target.value)}
+              placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+              rows={4}
+              disabled={importing}
+              style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, resize: 'vertical' }}
+            />
+          </div>
+          <p style={{ fontSize: 11.5, color: 'var(--text-2)', margin: 0, lineHeight: 1.5 }}>
+            Files are written to <code>/opt/hostpanel/custom-certs/{importDomain}/</code>. Nginx will reload automatically.
+          </p>
+        </div>
       </Modal>
 
       {/* Revoke modal */}
