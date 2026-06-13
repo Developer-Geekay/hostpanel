@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, Trash2, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, ShieldCheck, ChevronRight, ChevronDown, Loader2 } from 'lucide-react';
 import { apiGet, apiPost, apiPut, apiDelete } from '../../lib/api';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -14,36 +14,45 @@ interface CertLog {
 
 interface CertStatus {
   domain: string;
-  status: 'none' | 'valid' | 'expiring_soon' | 'expired';
+  status: 'none' | 'pending' | 'failed' | 'valid' | 'expiring_soon' | 'expired' | 'revoked';
   expiry: string | null;
   days_remaining: number | null;
   issuer: string | null;
+  sans: string[];
   https_forced: boolean;
 }
 
-function statusBadge(cert: CertStatus) {
-  if (cert.status === 'none') return <span className="badge badge-dim">No cert</span>;
-  if (cert.status === 'expired') return <span className="badge badge-err">Expired</span>;
-  if (cert.status === 'expiring_soon') return <span className="badge badge-warn">{cert.days_remaining}d left</span>;
-  return <span className="badge badge-ok">{cert.days_remaining}d left</span>;
+function StatusBadge({ cert }: { cert: CertStatus }) {
+  switch (cert.status) {
+    case 'none':         return <span className="badge badge-dim">No cert</span>;
+    case 'pending':      return <span className="badge" style={{ background: '#3b82f622', color: '#3b82f6', border: '1px solid #3b82f644' }}>Pending</span>;
+    case 'failed':       return <span className="badge badge-err">Failed</span>;
+    case 'revoked':      return <span className="badge badge-dim">Revoked</span>;
+    case 'expired':      return <span className="badge badge-err">Expired</span>;
+    case 'expiring_soon':return <span className="badge badge-warn">{cert.days_remaining}d left</span>;
+    case 'valid':        return <span className="badge badge-ok">{cert.days_remaining}d left</span>;
+    default:             return <span className="badge badge-dim">{cert.status}</span>;
+  }
 }
 
 export default function Ssl() {
   const toast = useToast();
-  const [certs, setCerts] = useState<CertStatus[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [autoRenew, setAutoRenew] = useState(false);
+  const [certs, setCerts]           = useState<CertStatus[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [autoRenew, setAutoRenew]   = useState(false);
+  const [expanded, setExpanded]     = useState<string | null>(null);
 
-  const [issueOpen, setIssueOpen] = useState(false);
+  // Modal state
+  const [modalOpen, setModalOpen]     = useState(false);
+  const [modalMode, setModalMode]     = useState<'issue' | 'renew'>('issue');
   const [issueDomain, setIssueDomain] = useState('');
-  const [issuing, setIssuing] = useState(false);
-  const [certLog, setCertLog] = useState<CertLog | null>(null);
-  const logPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const logBoxRef = useRef<HTMLPreElement>(null);
+  const [submitting, setSubmitting]   = useState(false);
+  const [certLog, setCertLog]         = useState<CertLog | null>(null);
+  const logPollRef                    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const logBoxRef                     = useRef<HTMLPreElement>(null);
 
   const [deleteTarget, setDeleteTarget] = useState('');
-  const [deleting, setDeleting] = useState(false);
-
+  const [deleting, setDeleting]         = useState(false);
   const [togglingHttps, setTogglingHttps] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -61,15 +70,17 @@ export default function Ssl() {
     }
   }, [toast]);
 
+  useEffect(() => { load(); }, [load]);
+
+  // Auto-poll when any cert is pending
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!certs.some(c => c.status === 'pending')) return;
+    const t = setInterval(() => load(), 5000);
+    return () => clearInterval(t);
+  }, [certs, load]);
 
   function stopLogPolling() {
-    if (logPollRef.current) {
-      clearInterval(logPollRef.current);
-      logPollRef.current = null;
-    }
+    if (logPollRef.current) { clearInterval(logPollRef.current); logPollRef.current = null; }
   }
 
   function startLogPolling(domain: string) {
@@ -78,35 +89,39 @@ export default function Ssl() {
       try {
         const data = await apiGet<CertLog>(`ssl/${domain}/log`);
         setCertLog(data);
-        // Auto-scroll log box to bottom
-        if (logBoxRef.current) {
-          logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
-        }
-        if (data.status === 'success') {
-          stopLogPolling();
-          load(); // refresh cert list
-        } else if (data.status === 'error') {
-          stopLogPolling();
-        }
-      } catch {
-        // server may be temporarily unavailable — keep polling
-      }
+        if (logBoxRef.current) logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
+        if (data.status === 'success') { stopLogPolling(); load(); }
+        else if (data.status === 'error') { stopLogPolling(); }
+      } catch { /* keep polling */ }
     };
-    poll(); // immediate first check
+    poll();
     logPollRef.current = setInterval(poll, 2000);
   }
 
-  // Clean up poll interval when modal closes
-  function closeIssueModal() {
+  function closeModal() {
     stopLogPolling();
-    setIssueOpen(false);
+    setModalOpen(false);
     setIssueDomain('');
     setCertLog(null);
   }
 
-  async function issueCert() {
+  function openIssue(domain = '') {
+    setCertLog(null);
+    setIssueDomain(domain);
+    setModalMode('issue');
+    setModalOpen(true);
+  }
+
+  function openRenew(domain: string) {
+    setCertLog(null);
+    setIssueDomain(domain);
+    setModalMode('renew');
+    setModalOpen(true);
+  }
+
+  async function submitIssue() {
     if (!issueDomain.trim()) return;
-    setIssuing(true);
+    setSubmitting(true);
     try {
       await apiPost('ssl/issue', { domain: issueDomain.trim() });
       setCertLog({ log: 'Certbot started — waiting for output…', status: 'running' });
@@ -114,7 +129,20 @@ export default function Ssl() {
     } catch (err: unknown) {
       toast.err(err instanceof Error ? err.message : 'Failed to issue certificate');
     } finally {
-      setIssuing(false);
+      setSubmitting(false);
+    }
+  }
+
+  async function submitRenew() {
+    setSubmitting(true);
+    try {
+      await apiPost(`ssl/${issueDomain}/renew`, {});
+      setCertLog({ log: 'Certbot renew started — waiting for output…', status: 'running' });
+      startLogPolling(issueDomain);
+    } catch (err: unknown) {
+      toast.err(err instanceof Error ? err.message : 'Failed to renew certificate');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -155,6 +183,11 @@ export default function Ssl() {
     }
   }
 
+  const inProgress = certLog !== null;
+  const modalTitle = inProgress
+    ? `${modalMode === 'renew' ? 'Renewing' : 'Issuing'} — ${issueDomain}`
+    : modalMode === 'renew' ? `Renew Certificate` : 'Issue Certificate';
+
   return (
     <div className="page">
       <div className="page-header">
@@ -171,7 +204,7 @@ export default function Ssl() {
             variant="primary"
             size="sm"
             icon={<Plus size={13} strokeWidth={1.5} />}
-            onClick={() => { setCertLog(null); setIssueDomain(''); setIssueOpen(true); }}
+            onClick={() => openIssue()}
           >
             Issue Certificate
           </Button>
@@ -187,99 +220,141 @@ export default function Ssl() {
           <div className="empty-desc">Add a domain in Web Server first, then issue a certificate here.</div>
         </div>
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Domain</th>
-                <th>Status</th>
-                <th>Expiry</th>
-                <th>Issuer</th>
-                <th>Force HTTPS</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {certs.map(c => (
-                <tr key={c.domain}>
-                  <td className="mono" style={{ fontWeight: 500 }}>{c.domain}</td>
-                  <td>{statusBadge(c)}</td>
-                  <td className="mono" style={{ fontSize: 11, color: 'var(--text-2)' }}>
-                    {c.expiry ?? '—'}
-                  </td>
-                  <td style={{ fontSize: 12, color: 'var(--text-2)' }}>{c.issuer ?? '—'}</td>
-                  <td>
-                    <Toggle
-                      checked={c.https_forced}
-                      onChange={() => toggleForceHttps(c)}
-                      disabled={c.status === 'none' || togglingHttps === c.domain}
-                    />
-                  </td>
-                  <td>
-                    <div className="actions">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={<RefreshCw size={12} strokeWidth={1.5} />}
-                        onClick={() => { setCertLog(null); setIssueDomain(c.domain); setIssueOpen(true); }}
-                        disabled={c.status === 'none' && false}
-                      >
-                        {c.status === 'none' ? 'Issue' : 'Renew'}
-                      </Button>
-                      {c.status !== 'none' && (
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          icon={<Trash2 size={12} strokeWidth={1.5} />}
-                          onClick={() => setDeleteTarget(c.domain)}
-                        />
-                      )}
-                    </div>
-                  </td>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Domain</th>
+                  <th>Status</th>
+                  <th>Expiry</th>
+                  <th>Issuer</th>
+                  <th>Force HTTPS</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {certs.map(c => {
+                  const isExpanded = expanded === c.domain;
+                  const hasSans = c.sans && c.sans.length > 0;
+                  return [
+                    <tr key={c.domain}>
+                      <td className="mono" style={{ fontWeight: 500 }}>
+                        <button
+                          onClick={() => setExpanded(isExpanded ? null : c.domain)}
+                          style={{ background: 'none', border: 'none', cursor: hasSans ? 'pointer' : 'default', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'inherit', fontFamily: 'inherit', fontWeight: 'inherit', fontSize: 'inherit' }}
+                          disabled={!hasSans}
+                        >
+                          {hasSans
+                            ? (isExpanded ? <ChevronDown size={12} strokeWidth={1.5} /> : <ChevronRight size={12} strokeWidth={1.5} />)
+                            : <span style={{ width: 16 }} />
+                          }
+                          {c.domain}
+                        </button>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <StatusBadge cert={c} />
+                          {c.status === 'pending' && <Loader2 size={12} strokeWidth={1.5} style={{ animation: 'spin 1s linear infinite', color: '#3b82f6' }} />}
+                        </div>
+                      </td>
+                      <td className="mono" style={{ fontSize: 11, color: 'var(--text-2)' }}>
+                        {c.expiry ?? '—'}
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--text-2)' }}>{c.issuer ?? '—'}</td>
+                      <td>
+                        <Toggle
+                          checked={c.https_forced}
+                          onChange={() => toggleForceHttps(c)}
+                          disabled={['none', 'pending', 'failed', 'revoked'].includes(c.status) || togglingHttps === c.domain}
+                        />
+                      </td>
+                      <td>
+                        <div className="actions">
+                          {c.status === 'pending' && (
+                            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>In progress…</span>
+                          )}
+                          {(c.status === 'none' || c.status === 'revoked') && (
+                            <Button variant="ghost" size="sm" icon={<Plus size={12} strokeWidth={1.5} />} onClick={() => openIssue(c.domain)}>
+                              Issue
+                            </Button>
+                          )}
+                          {c.status === 'failed' && (
+                            <Button variant="ghost" size="sm" icon={<RefreshCw size={12} strokeWidth={1.5} />} onClick={() => openIssue(c.domain)}>
+                              Retry
+                            </Button>
+                          )}
+                          {(c.status === 'valid' || c.status === 'expiring_soon' || c.status === 'expired') && (
+                            <>
+                              <Button variant="ghost" size="sm" icon={<RefreshCw size={12} strokeWidth={1.5} />} onClick={() => openRenew(c.domain)}>
+                                Renew
+                              </Button>
+                              <Button variant="danger" size="sm" icon={<Trash2 size={12} strokeWidth={1.5} />} onClick={() => setDeleteTarget(c.domain)} />
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>,
+                    isExpanded && hasSans && (
+                      <tr key={`${c.domain}-sans`} style={{ background: 'var(--bg-2)' }}>
+                        <td colSpan={6} style={{ paddingLeft: 32, paddingTop: 6, paddingBottom: 10 }}>
+                          <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>Subject Alternative Names</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px' }}>
+                            {c.sans.map(san => (
+                              <span key={san} className="mono" style={{ fontSize: 11, background: 'var(--bg-3)', border: '1px solid var(--border-2)', borderRadius: 4, padding: '2px 7px', color: 'var(--text)' }}>
+                                {san}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ),
+                  ];
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {/* Issue / Renew modal */}
       <Modal
-        open={issueOpen}
-        onClose={certLog ? () => {} : () => closeIssueModal()}
-        title={certLog ? `Issuing certificate — ${issueDomain}` : 'Issue Certificate'}
-        width={certLog ? 600 : 400}
+        open={modalOpen}
+        onClose={inProgress ? () => {} : closeModal}
+        title={modalTitle}
+        width={inProgress ? 600 : 400}
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
-            {certLog ? (
+            {inProgress ? (
               <>
-                {certLog.status === 'running' && (
-                  <span style={{ fontSize: 12, color: 'var(--text-2)', marginRight: 'auto' }}>
-                    ⟳ Running…
+                {certLog?.status === 'running' && (
+                  <span style={{ fontSize: 12, color: 'var(--text-2)', marginRight: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Loader2 size={12} strokeWidth={1.5} style={{ animation: 'spin 1s linear infinite' }} /> Running…
                   </span>
                 )}
-                {certLog.status === 'success' && (
-                  <span style={{ fontSize: 12, color: 'var(--ok)', marginRight: 'auto' }}>
-                    ✓ Certificate issued successfully
-                  </span>
+                {certLog?.status === 'success' && (
+                  <span style={{ fontSize: 12, color: 'var(--ok)', marginRight: 'auto' }}>✓ Certificate {modalMode === 'renew' ? 'renewed' : 'issued'} successfully</span>
                 )}
-                {certLog.status === 'error' && (
-                  <span style={{ fontSize: 12, color: 'var(--err)', marginRight: 'auto' }}>
-                    ✕ Issuance failed — see log above
-                  </span>
+                {certLog?.status === 'error' && (
+                  <span style={{ fontSize: 12, color: 'var(--err)', marginRight: 'auto' }}>✕ Failed — see log above</span>
                 )}
-                <Button variant="ghost" size="sm" onClick={closeIssueModal}>Close</Button>
+                <Button variant="ghost" size="sm" onClick={closeModal}>Close</Button>
+              </>
+            ) : modalMode === 'renew' ? (
+              <>
+                <Button variant="ghost" size="sm" onClick={closeModal} disabled={submitting}>Cancel</Button>
+                <Button variant="primary" size="sm" loading={submitting} onClick={submitRenew}>Renew Now</Button>
               </>
             ) : (
               <>
-                <Button variant="ghost" size="sm" onClick={closeIssueModal} disabled={issuing}>Cancel</Button>
-                <Button variant="primary" size="sm" loading={issuing} disabled={!issueDomain.trim()} onClick={issueCert}>Issue</Button>
+                <Button variant="ghost" size="sm" onClick={closeModal} disabled={submitting}>Cancel</Button>
+                <Button variant="primary" size="sm" loading={submitting} disabled={!issueDomain.trim()} onClick={submitIssue}>Issue</Button>
               </>
             )}
           </div>
         }
       >
-        {certLog ? (
+        {inProgress ? (
           <pre
             ref={logBoxRef}
             style={{
@@ -290,8 +365,13 @@ export default function Ssl() {
               maxHeight: 340, overflowY: 'auto', margin: 0,
             }}
           >
-            {certLog.log || 'Waiting for certbot output…'}
+            {certLog?.log || 'Waiting for certbot output…'}
           </pre>
+        ) : modalMode === 'renew' ? (
+          <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>
+            Force-renew the certificate for <strong style={{ color: 'var(--text)' }}>{issueDomain}</strong>?
+            Certbot will request a new certificate regardless of expiry. The process runs in the background.
+          </p>
         ) : (
           <>
             <div className="field">
@@ -302,8 +382,8 @@ export default function Ssl() {
                 onChange={e => setIssueDomain(e.target.value)}
                 placeholder="example.com"
                 autoFocus
-                disabled={issuing}
-                onKeyDown={e => { if (e.key === 'Enter') issueCert(); }}
+                disabled={submitting}
+                onKeyDown={e => { if (e.key === 'Enter') submitIssue(); }}
               />
             </div>
             <p style={{ fontSize: 11.5, color: 'var(--text-2)', marginTop: 10, lineHeight: 1.5 }}>

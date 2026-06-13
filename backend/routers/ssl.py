@@ -1,23 +1,23 @@
 """
 SSL Certificate & Let's Encrypt API Router
 
-Exposes endpoints to provision, renew, revoke, and enforce HTTPS certificates.
-
 Path Prefix: `/cpanelapi/ssl`
-Access Control: Injected current user dependency (standard users are scoped to certificates matching their domains).
+Access Control: Injected current user dependency (standard users are scoped to their domains).
 
 Integrations:
-- Certbot: Spawns Let's Encrypt `certbot certonly --webroot` background processes to request and renew SSL certificates.
-- OpenSSL: Executes `openssl x509` commands to extract certificate details, validation states, and expiry counts.
-- Dynamic Hooks: Notifies installed plugins (such as NGINX vhosts) of SSL creations, deletions, and force-HTTPS rewrites.
+- Certbot: Spawns Let's Encrypt certbot background processes for issue and renew.
+- OpenSSL: Extracts expiry, SANs, and issuer from cert bytes via stdin pipe.
+- Dynamic Hooks: Notifies installed plugins (nginx) of SSL creations, deletions, force-HTTPS rewrites.
 
 Endpoints:
-- `GET `: Returns certificate health statuses for all active registered domains.
-- `GET /renewal`: Inspects whether the systemd `certbot.timer` is enabled.
-- `PUT /renewal`: Starts or stops the automatic renewal systemd timer (Admin-only).
-- `POST /issue`: Issues an SSL certificate in the background for a provisioned domain and its aliases.
-- `DELETE /{domain}`: Revokes Let's Encrypt certificates and triggers fallback hooks.
-- `PUT /{domain}/force-https`: Toggles SSL permanent redirects inside NGINX configuration templates.
+- `GET /`                   : cert health + SANs for all provisioned domains
+- `GET /renewal`            : inspect certbot.timer state
+- `PUT /renewal`            : enable/disable auto-renew timer (Admin-only)
+- `POST /issue`             : issue new cert via certbot certonly --webroot
+- `POST /{domain}/renew`    : force-renew existing cert via certbot renew
+- `GET /{domain}/log`       : tail latest certbot log and derive status
+- `DELETE /{domain}`        : revoke cert, write sentinel, trigger nginx downgrade
+- `PUT /{domain}/force-https`: toggle HTTPS redirect in nginx vhost
 """
 import os
 import datetime
@@ -44,10 +44,11 @@ CERTBOT_LOG_DIR = "/tmp/hostpanel-ssl-logs"
 
 class CertStatus(BaseModel):
     domain: str
-    status: str
+    status: str           # none|pending|failed|valid|expiring_soon|expired|revoked
     expiry: Optional[str]
     days_remaining: Optional[int]
     issuer: Optional[str]
+    sans: List[str] = []
     https_forced: bool
 
 class IssueRequest(BaseModel):
@@ -62,8 +63,9 @@ class ForceHttpsRequest(BaseModel):
     enabled: bool
 
 
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
 def _is_https_forced(domain: str) -> bool:
-    """Read nginx vhost to detect force-HTTPS redirect. Returns False when nginx not installed."""
     vhost_path = f"{VHOSTS_DIR}/{domain}.conf"
     if not os.path.exists(vhost_path):
         return False
@@ -75,52 +77,116 @@ def _is_https_forced(domain: str) -> bool:
 
 
 def _cert_readable(domain: str) -> bool:
-    """Return True if a cert exists for this domain (uses sudo cat since /etc/letsencrypt is root-owned)."""
     cert_path = f"{LETSENCRYPT_DIR}/{domain}/fullchain.pem"
     r = subprocess.run(["sudo", "-n", "cat", cert_path], capture_output=True, timeout=5)
     return r.returncode == 0
 
 
-def _cert_expiry(domain: str) -> Optional[datetime.datetime]:
+def _read_cert_bytes(domain: str) -> Optional[bytes]:
+    """Return raw cert bytes via sudo cat, or None if unreadable."""
     cert_path = f"{LETSENCRYPT_DIR}/{domain}/fullchain.pem"
-    # /etc/letsencrypt/live/ is root-owned; read via sudo cat then pipe to openssl via stdin
-    cat = subprocess.run(["sudo", "-n", "cat", cert_path], capture_output=True, timeout=10)
-    if cat.returncode != 0:
-        return None
+    r = subprocess.run(["sudo", "-n", "cat", cert_path], capture_output=True, timeout=10)
+    return r.stdout if r.returncode == 0 else None
+
+
+def _cert_expiry(cert_bytes: bytes) -> Optional[datetime.datetime]:
     try:
-        # Pass cert bytes directly to openssl stdin — no text=True since input is bytes
         result = subprocess.run(
             ["openssl", "x509", "-noout", "-enddate"],
-            input=cat.stdout, capture_output=True, timeout=10
+            input=cert_bytes, capture_output=True, timeout=10
         )
         if result.returncode != 0:
             return None
         date_str = result.stdout.decode().strip().split("=", 1)[1]
         return datetime.datetime.strptime(date_str, "%b %d %H:%M:%S %Y %Z")
     except Exception as e:
-        logger.warning(f"Could not parse cert expiry for {domain}: {e}")
+        logger.warning(f"Could not parse cert expiry: {e}")
         return None
 
 
+def _cert_sans(cert_bytes: bytes) -> List[str]:
+    try:
+        result = subprocess.run(
+            ["openssl", "x509", "-noout", "-ext", "subjectAltName"],
+            input=cert_bytes, capture_output=True, timeout=10
+        )
+        if result.returncode != 0:
+            return []
+        sans = []
+        for part in result.stdout.decode().split(","):
+            part = part.strip()
+            if part.startswith("DNS:"):
+                sans.append(part[4:])
+        return sans
+    except Exception as e:
+        logger.warning(f"Could not parse SANs: {e}")
+        return []
+
+
+def _log_derived_status(domain: str) -> str:
+    """Read certbot log and return 'pending', 'failed', or 'none'."""
+    log_path = os.path.join(CERTBOT_LOG_DIR, f"{domain}.log")
+    if not os.path.exists(log_path):
+        return "none"
+    try:
+        with open(log_path) as f:
+            content = f.read()
+        if any(k in content for k in ("Error", "error", "FAILED", "Failed",
+                                       "Problem binding", "Could not", "Unable to",
+                                       "Challenge failed")):
+            return "failed"
+        return "pending"
+    except Exception:
+        return "none"
+
+
 def _cert_status_for(domain: str) -> CertStatus:
-    expiry = _cert_expiry(domain)
     https_forced = _is_https_forced(domain)
+
+    # Revoked sentinel written by DELETE endpoint
+    revoked_path = os.path.join(CERTBOT_LOG_DIR, f"{domain}.revoked")
+    if os.path.exists(revoked_path):
+        return CertStatus(domain=domain, status="revoked", expiry=None,
+                          days_remaining=None, issuer=None, sans=[], https_forced=https_forced)
+
+    cert_bytes = _read_cert_bytes(domain)
+    if cert_bytes is None:
+        status = _log_derived_status(domain)
+        return CertStatus(domain=domain, status=status, expiry=None,
+                          days_remaining=None, issuer=None, sans=[], https_forced=https_forced)
+
+    expiry = _cert_expiry(cert_bytes)
     if expiry is None:
         return CertStatus(domain=domain, status="none", expiry=None,
-                          days_remaining=None, issuer=None, https_forced=https_forced)
+                          days_remaining=None, issuer=None, sans=[], https_forced=https_forced)
+
     now = datetime.datetime.utcnow()
     days = (expiry - now).days
     status = "expired" if days < 0 else "expiring_soon" if days < 30 else "valid"
-    return CertStatus(domain=domain, status=status, expiry=expiry.strftime("%Y-%m-%d"),
-                      days_remaining=days, issuer="Let's Encrypt", https_forced=https_forced)
+    sans = _cert_sans(cert_bytes)
 
+    return CertStatus(
+        domain=domain, status=status,
+        expiry=expiry.strftime("%Y-%m-%d"), days_remaining=days,
+        issuer="Let's Encrypt", sans=sans, https_forced=https_forced,
+    )
+
+
+def _spawn_certbot(cmd: List[str], domain: str):
+    """Write log header and spawn certbot as a background process."""
+    os.makedirs(CERTBOT_LOG_DIR, exist_ok=True)
+    log_path = os.path.join(CERTBOT_LOG_DIR, f"{domain}.log")
+    log_fd = open(log_path, "w")
+    log_fd.write(f"$ {' '.join(cmd)}\n\n")
+    log_fd.flush()
+    subprocess.Popen(cmd, stdout=log_fd, stderr=subprocess.STDOUT)
+    log_fd.close()
+
+
+# ── Routes ─────────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[CertStatus])
 async def list_certs(current_user: User = Depends(get_current_user)):
-    """Return SSL cert status for every provisioned domain.
-    Only domains in the domain registry are listed — SERVER_DOMAIN is not
-    injected here because SSL issuance requires a provisioned document_root
-    (certbot --webroot) and an active web server vhost."""
     domains = _load_domains()
     if current_user.role != "admin":
         domains = [d for d in domains if d.get("username") == current_user.linux_user]
@@ -156,7 +222,6 @@ async def issue_cert(request: IssueRequest, current_user: User = Depends(get_cur
     check_domain_access(record, current_user)
 
     domain = request.domain
-    # Apex domains get www + cpanel + ftp SANs; subdomains get only themselves
     is_apex = domain.count('.') == 1
     cmd = ["sudo", "certbot", "certonly", "--webroot", "-w", record["document_root"], "-d", domain]
     if is_apex:
@@ -166,23 +231,43 @@ async def issue_cert(request: IssueRequest, current_user: User = Depends(get_cur
     cmd += ["--non-interactive", "--agree-tos", "--email", CERTBOT_EMAIL,
             "--expand" if (request.force or request.additional_domains) else "--keep-until-expiring"]
 
-    os.makedirs(CERTBOT_LOG_DIR, exist_ok=True)
-    log_path = os.path.join(CERTBOT_LOG_DIR, f"{domain}.log")
+    # Clear any stale revoked sentinel so status shows pending instead of revoked
+    revoked_path = os.path.join(CERTBOT_LOG_DIR, f"{domain}.revoked")
+    if os.path.exists(revoked_path):
+        try: os.remove(revoked_path)
+        except Exception: pass
+
     try:
-        log_fd = open(log_path, "w")
-        log_fd.write(f"$ {' '.join(cmd)}\n\n")
-        log_fd.flush()
-        subprocess.Popen(cmd, stdout=log_fd, stderr=subprocess.STDOUT)
-        log_fd.close()  # parent closes; child (certbot) keeps writing
+        _spawn_certbot(cmd, domain)
     except FileNotFoundError:
         raise HTTPException(status_code=503, detail="certbot not found.")
     log_action(current_user.username, "ssl.issue", resource=domain)
     return {"domain": domain, "status": "pending", "message": "certbot started in background"}
 
 
+@router.post("/{domain}/renew")
+async def renew_cert(domain: str, current_user: User = Depends(get_current_user)):
+    """Force-renew an existing certificate via certbot renew."""
+    domains = _load_domains()
+    record = next((d for d in domains if d["domain_name"] == domain), None)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Domain '{domain}' not provisioned.")
+    check_domain_access(record, current_user)
+    if not _cert_readable(domain):
+        raise HTTPException(status_code=400,
+                            detail=f"No existing certificate for '{domain}'. Use /issue instead.")
+
+    cmd = ["sudo", "certbot", "renew", "--cert-name", domain, "--force-renewal", "--non-interactive"]
+    try:
+        _spawn_certbot(cmd, domain)
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="certbot not found.")
+    log_action(current_user.username, "ssl.renew", resource=domain)
+    return {"domain": domain, "status": "pending", "message": "certbot renew started in background"}
+
+
 @router.get("/{domain}/log")
 async def get_cert_log(domain: str, current_user: User = Depends(get_current_user)):
-    """Return the most recent certbot log for a domain and a derived status."""
     domains = _load_domains()
     record = next((d for d in domains if d["domain_name"] == domain), None)
     if record:
@@ -222,7 +307,15 @@ async def revoke_cert(domain: str, current_user: User = Depends(get_current_user
                        check=True, capture_output=True, text=True, timeout=30)
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"certbot error: {e.stderr.strip()}")
-    # Notify plugins (nginx) to downgrade the vhost to HTTP
+
+    # Write revoked sentinel so list_certs returns status=revoked
+    os.makedirs(CERTBOT_LOG_DIR, exist_ok=True)
+    try:
+        with open(os.path.join(CERTBOT_LOG_DIR, f"{domain}.revoked"), "w") as f:
+            f.write(datetime.datetime.utcnow().isoformat())
+    except Exception:
+        pass
+
     doc_root = record["document_root"] if record else None
     await call_hooks("hostpanel.hooks.ssl_cert_deleted", domain=domain, doc_root=doc_root)
     log_action(current_user.username, "ssl.revoke", resource=domain)
@@ -230,7 +323,8 @@ async def revoke_cert(domain: str, current_user: User = Depends(get_current_user
 
 
 @router.put("/{domain}/force-https")
-async def toggle_force_https(domain: str, request: ForceHttpsRequest, current_user: User = Depends(get_current_user)):
+async def toggle_force_https(domain: str, request: ForceHttpsRequest,
+                              current_user: User = Depends(get_current_user)):
     domains = _load_domains()
     record = next((d for d in domains if d["domain_name"] == domain), None)
     if not record:
@@ -238,7 +332,6 @@ async def toggle_force_https(domain: str, request: ForceHttpsRequest, current_us
     check_domain_access(record, current_user)
     if request.enabled and not _cert_readable(domain):
         raise HTTPException(status_code=400, detail="Cannot enable Force HTTPS: no active SSL certificate.")
-    # Delegate vhost rewrite to whichever web server plugin is installed
     await call_hooks("hostpanel.hooks.ssl_force_https",
                      domain=domain, enabled=request.enabled, doc_root=record["document_root"])
     log_action(current_user.username, f"ssl.force_https_{'on' if request.enabled else 'off'}", resource=domain)
