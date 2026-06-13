@@ -32,9 +32,9 @@ from auth import User
 from deps import get_current_user
 from domain_registry import _load_domains, check_domain_access
 from hooks import call_hooks
-from routers.dns_credentials import get_token_for_user
-
-HOOKS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "hooks")
+PDNS_URL     = os.environ.get("PDNS_URL", "http://127.0.0.1:8053")
+PDNS_API_KEY = os.environ.get("PDNS_API_KEY", "hostpanel-dns-api-key")
+HOOKS_DIR    = os.path.join(os.path.dirname(os.path.dirname(__file__)), "hooks")
 
 router = APIRouter(prefix="/cpanelapi/ssl", tags=["SSL"])
 logger = logging.getLogger(__name__)
@@ -59,7 +59,6 @@ class IssueRequest(BaseModel):
     domain: str
     force: bool = False
     additional_domains: List[str] = []
-    validation_method: str = "http-01"   # "http-01" | "dns-01"
     wildcard: bool = False
 
 class RenewalRequest(BaseModel):
@@ -243,25 +242,19 @@ async def issue_cert(request: IssueRequest, current_user: User = Depends(get_cur
 
     domain = request.domain
 
-    if request.validation_method == "dns-01":
-        token = get_token_for_user(current_user.linux_user)
-        if not token:
-            raise HTTPException(status_code=400,
-                                detail="No DNS credentials configured. Add them under SSL → DNS Credentials.")
-        auth_hook    = f"python3 {HOOKS_DIR}/cf_auth.py {token}"
-        cleanup_hook = f"python3 {HOOKS_DIR}/cf_cleanup.py {token}"
+    if request.wildcard:
+        auth_hook    = f"python3 {HOOKS_DIR}/pdns_auth.py {PDNS_URL} {PDNS_API_KEY}"
+        cleanup_hook = f"python3 {HOOKS_DIR}/pdns_cleanup.py {PDNS_URL} {PDNS_API_KEY}"
         cmd = ["sudo", "certbot", "certonly",
                "--manual", "--preferred-challenges", "dns",
                "--manual-auth-hook",    auth_hook,
                "--manual-cleanup-hook", cleanup_hook,
                "--manual-public-ip-logging-ok",
-               "-d", domain, "--cert-name", domain]
-        if request.wildcard:
-            cmd += ["-d", f"*.{domain}"]
+               "-d", domain, "-d", f"*.{domain}", "--cert-name", domain]
         for san in request.additional_domains:
             cmd += ["-d", san]
         cmd += ["--non-interactive", "--agree-tos", "--email", CERTBOT_EMAIL,
-                "--expand" if (request.force or request.wildcard or request.additional_domains) else "--keep-until-expiring"]
+                "--expand" if (request.force or request.additional_domains) else "--keep-until-expiring"]
     else:
         is_apex = domain.count('.') == 1
         cmd = ["sudo", "certbot", "certonly", "--webroot", "-w", record["document_root"], "-d", domain]

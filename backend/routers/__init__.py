@@ -23,6 +23,5 @@ from .databases import router as databases_router
 from .files import router as files_router
 from .dns import router as dns_router
 from .ssl import router as ssl_router
-from .dns_credentials import router as dns_credentials_router
 from .services import router as services_router
 from .packages import router as packages_router
