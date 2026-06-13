@@ -32,6 +32,7 @@ from auth import User
 from deps import get_current_user
 from domain_registry import _load_domains, check_domain_access
 from hooks import call_hooks
+from routers.dns_credentials import get_cloudflare_ini_path
 
 router = APIRouter(prefix="/cpanelapi/ssl", tags=["SSL"])
 logger = logging.getLogger(__name__)
@@ -50,11 +51,14 @@ class CertStatus(BaseModel):
     issuer: Optional[str]
     sans: List[str] = []
     https_forced: bool
+    is_wildcard: bool = False
 
 class IssueRequest(BaseModel):
     domain: str
     force: bool = False
     additional_domains: List[str] = []
+    validation_method: str = "http-01"   # "http-01" | "dns-01"
+    wildcard: bool = False
 
 class RenewalRequest(BaseModel):
     enabled: bool
@@ -143,32 +147,46 @@ def _log_derived_status(domain: str) -> str:
 def _cert_status_for(domain: str) -> CertStatus:
     https_forced = _is_https_forced(domain)
 
-    # Revoked sentinel written by DELETE endpoint
-    revoked_path = os.path.join(CERTBOT_LOG_DIR, f"{domain}.revoked")
-    if os.path.exists(revoked_path):
-        return CertStatus(domain=domain, status="revoked", expiry=None,
-                          days_remaining=None, issuer=None, sans=[], https_forced=https_forced)
+    # Certbot may store wildcard certs under _wildcard.{domain} if --cert-name wasn't forced.
+    # Check both names; prefer {domain}.
+    cert_names = [domain, f"_wildcard.{domain}"]
 
-    cert_bytes = _read_cert_bytes(domain)
+    for cert_name in cert_names:
+        revoked_path = os.path.join(CERTBOT_LOG_DIR, f"{cert_name}.revoked")
+        if os.path.exists(revoked_path):
+            return CertStatus(domain=domain, status="revoked", expiry=None,
+                              days_remaining=None, issuer=None, sans=[],
+                              https_forced=https_forced)
+
+    cert_bytes = None
+    for cert_name in cert_names:
+        cert_bytes = _read_cert_bytes(cert_name)
+        if cert_bytes is not None:
+            break
+
     if cert_bytes is None:
         status = _log_derived_status(domain)
         return CertStatus(domain=domain, status=status, expiry=None,
-                          days_remaining=None, issuer=None, sans=[], https_forced=https_forced)
+                          days_remaining=None, issuer=None, sans=[],
+                          https_forced=https_forced)
 
     expiry = _cert_expiry(cert_bytes)
     if expiry is None:
         return CertStatus(domain=domain, status="none", expiry=None,
-                          days_remaining=None, issuer=None, sans=[], https_forced=https_forced)
+                          days_remaining=None, issuer=None, sans=[],
+                          https_forced=https_forced)
 
     now = datetime.datetime.utcnow()
     days = (expiry - now).days
     status = "expired" if days < 0 else "expiring_soon" if days < 30 else "valid"
     sans = _cert_sans(cert_bytes)
+    is_wildcard = any(s.startswith("*.") for s in sans)
 
     return CertStatus(
         domain=domain, status=status,
         expiry=expiry.strftime("%Y-%m-%d"), days_remaining=days,
         issuer="Let's Encrypt", sans=sans, https_forced=https_forced,
+        is_wildcard=is_wildcard,
     )
 
 
@@ -222,14 +240,31 @@ async def issue_cert(request: IssueRequest, current_user: User = Depends(get_cur
     check_domain_access(record, current_user)
 
     domain = request.domain
-    is_apex = domain.count('.') == 1
-    cmd = ["sudo", "certbot", "certonly", "--webroot", "-w", record["document_root"], "-d", domain]
-    if is_apex:
-        cmd += ["-d", f"www.{domain}", "-d", f"cpanel.{domain}", "-d", f"ftp.{domain}"]
-    for san in request.additional_domains:
-        cmd += ["-d", san]
-    cmd += ["--non-interactive", "--agree-tos", "--email", CERTBOT_EMAIL,
-            "--expand" if (request.force or request.additional_domains) else "--keep-until-expiring"]
+
+    if request.validation_method == "dns-01":
+        ini_path = get_cloudflare_ini_path(current_user.linux_user)
+        if not ini_path:
+            raise HTTPException(status_code=400,
+                                detail="No Cloudflare DNS credentials configured. Add them under SSL → DNS Credentials.")
+        cmd = ["sudo", "certbot", "certonly",
+               "--dns-cloudflare", "--dns-cloudflare-credentials", ini_path,
+               "--dns-cloudflare-propagation-seconds", "30",
+               "-d", domain, "--cert-name", domain]
+        if request.wildcard:
+            cmd += ["-d", f"*.{domain}"]
+        for san in request.additional_domains:
+            cmd += ["-d", san]
+        cmd += ["--non-interactive", "--agree-tos", "--email", CERTBOT_EMAIL,
+                "--expand" if (request.force or request.wildcard or request.additional_domains) else "--keep-until-expiring"]
+    else:
+        is_apex = domain.count('.') == 1
+        cmd = ["sudo", "certbot", "certonly", "--webroot", "-w", record["document_root"], "-d", domain]
+        if is_apex:
+            cmd += ["-d", f"www.{domain}", "-d", f"cpanel.{domain}", "-d", f"ftp.{domain}"]
+        for san in request.additional_domains:
+            cmd += ["-d", san]
+        cmd += ["--non-interactive", "--agree-tos", "--email", CERTBOT_EMAIL,
+                "--expand" if (request.force or request.additional_domains) else "--keep-until-expiring"]
 
     # Clear any stale revoked sentinel so status shows pending instead of revoked
     revoked_path = os.path.join(CERTBOT_LOG_DIR, f"{domain}.revoked")

@@ -41,6 +41,7 @@ from routers import (
     files_router,
     dns_router,
     ssl_router,
+    dns_credentials_router,
     services_router,
     packages_router
 )
@@ -156,6 +157,7 @@ app.include_router(databases_router, dependencies=[Depends(get_current_user)])
 app.include_router(files_router, dependencies=[Depends(get_current_user)])
 app.include_router(dns_router, dependencies=[Depends(get_current_user)])
 app.include_router(ssl_router, dependencies=[Depends(get_current_user)])
+app.include_router(dns_credentials_router, dependencies=[Depends(get_current_user)])
 app.include_router(services_router, dependencies=[Depends(get_current_user)])
 app.include_router(packages_router, dependencies=[Depends(get_current_user)])
 
