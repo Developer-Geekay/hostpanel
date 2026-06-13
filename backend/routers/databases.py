@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 
+from audit import log_action
 from auth import User
 from deps import get_current_user
 from db import get_conn
@@ -160,6 +161,7 @@ async def create_mysql_database(req: CreateDbRequest, current_user: User = Depen
     _save_store(records)
 
     logger.info(f"MySQL database created: {req.name} (user: {db_user}, owner: {current_user.linux_user})")
+    log_action(current_user.username, "db.create", resource=req.name)
     return CreateDbResponse(
         name=req.name,
         db_user=db_user,
@@ -190,4 +192,5 @@ async def delete_mysql_database(db_name: str, current_user: User = Depends(get_c
 
     _save_store([r for r in records if r["name"] != db_name])
     logger.info(f"MySQL database deleted: {db_name}")
+    log_action(current_user.username, "db.delete", resource=db_name)
     return {"message": f"Database {db_name} and user {db_user} deleted"}

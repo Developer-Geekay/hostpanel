@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 
+from audit import log_action
 from auth import User
 from deps import get_current_user
 from domain_registry import _load_domains, check_domain_access
@@ -142,6 +143,7 @@ async def set_renewal(request: RenewalRequest, current_user: User = Depends(get_
                        check=True, capture_output=True, text=True, timeout=10)
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"systemctl error: {e.stderr.strip()}")
+    log_action(current_user.username, f"ssl.renewal_{'enable' if request.enabled else 'disable'}")
     return {"enabled": request.enabled}
 
 
@@ -154,8 +156,11 @@ async def issue_cert(request: IssueRequest, current_user: User = Depends(get_cur
     check_domain_access(record, current_user)
 
     domain = request.domain
-    cmd = ["sudo", "certbot", "certonly", "--webroot", "-w", record["document_root"],
-           "-d", domain, "-d", f"www.{domain}"]
+    # Apex domains get www + cpanel + ftp SANs; subdomains get only themselves
+    is_apex = domain.count('.') == 1
+    cmd = ["sudo", "certbot", "certonly", "--webroot", "-w", record["document_root"], "-d", domain]
+    if is_apex:
+        cmd += ["-d", f"www.{domain}", "-d", f"cpanel.{domain}", "-d", f"ftp.{domain}"]
     for san in request.additional_domains:
         cmd += ["-d", san]
     cmd += ["--non-interactive", "--agree-tos", "--email", CERTBOT_EMAIL,
@@ -171,6 +176,7 @@ async def issue_cert(request: IssueRequest, current_user: User = Depends(get_cur
         log_fd.close()  # parent closes; child (certbot) keeps writing
     except FileNotFoundError:
         raise HTTPException(status_code=503, detail="certbot not found.")
+    log_action(current_user.username, "ssl.issue", resource=domain)
     return {"domain": domain, "status": "pending", "message": "certbot started in background"}
 
 
@@ -219,6 +225,7 @@ async def revoke_cert(domain: str, current_user: User = Depends(get_current_user
     # Notify plugins (nginx) to downgrade the vhost to HTTP
     doc_root = record["document_root"] if record else None
     await call_hooks("hostpanel.hooks.ssl_cert_deleted", domain=domain, doc_root=doc_root)
+    log_action(current_user.username, "ssl.revoke", resource=domain)
     return {"message": f"Certificate for {domain} removed"}
 
 
@@ -234,4 +241,5 @@ async def toggle_force_https(domain: str, request: ForceHttpsRequest, current_us
     # Delegate vhost rewrite to whichever web server plugin is installed
     await call_hooks("hostpanel.hooks.ssl_force_https",
                      domain=domain, enabled=request.enabled, doc_root=record["document_root"])
+    log_action(current_user.username, f"ssl.force_https_{'on' if request.enabled else 'off'}", resource=domain)
     return {"domain": domain, "https_forced": request.enabled}

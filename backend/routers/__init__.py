@@ -15,6 +15,7 @@ Sub-routers included:
 - services: systemd services control.
 - packages: core package & plugin installer.
 """
+from .audit import router as audit_router
 from .dashboard import router as dashboard_router
 from .users import router as users_router
 from .ssh import router as ssh_router

@@ -29,9 +29,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from auth import Token, create_access_token, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES
 from deps import get_current_user, oauth2_scheme
+from audit import log_action
 from db import init_db
 from portal_users import ensure_admin_exists, get_user as get_portal_user
 from routers import (
+    audit_router,
     dashboard_router,
     users_router,
     ssh_router,
@@ -146,6 +148,7 @@ default_username = os.environ.get("DEFAULT_USERNAME", "admin")
 default_password = os.environ.get("DEFAULT_PASSWORD", "admin")
 
 # Include module routers securely
+app.include_router(audit_router,     dependencies=[Depends(get_current_user)])
 app.include_router(dashboard_router, dependencies=[Depends(get_current_user)])
 app.include_router(users_router, dependencies=[Depends(get_current_user)])
 app.include_router(ssh_router, dependencies=[Depends(get_current_user)])
@@ -196,6 +199,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     portal_user = get_portal_user(form_data.username)
     if not portal_user:
         logger.warning(f"Failed login attempt for username: {form_data.username}")
+        log_action(form_data.username, "auth.login_fail", detail="user not found", status="error")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -203,12 +207,14 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         )
     if not verify_password(form_data.password, portal_user.hashed_password):
         logger.warning(f"Failed login attempt for username: {form_data.username} (incorrect password)")
+        log_action(form_data.username, "auth.login_fail", detail="wrong password", status="error")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if portal_user.disabled:
+        log_action(form_data.username, "auth.login_fail", detail="account disabled", status="error")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account is disabled",
@@ -216,6 +222,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         )
 
     logger.info(f"Successful login for user: {form_data.username} (role={portal_user.role})")
+    log_action(form_data.username, "auth.login")
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": portal_user.username, "role": portal_user.role},

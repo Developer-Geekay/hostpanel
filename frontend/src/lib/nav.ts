@@ -41,8 +41,9 @@ export const CORE_SECTIONS: NavSection[] = [
     order: 30,
     adminOnly: true,
     items: [
-      { route: 'ssh', label: 'SSH Keys', icon: 'terminal', adminOnly: true },
-      { route: 'ssl', label: 'SSL',      icon: 'lock',     adminOnly: true },
+      { route: 'ssh',   label: 'SSH Keys',  icon: 'terminal', adminOnly: true },
+      { route: 'ssl',   label: 'SSL',       icon: 'lock',     adminOnly: true },
+      { route: 'audit', label: 'Audit Log', icon: 'audit',    adminOnly: true },
     ],
   },
 ];

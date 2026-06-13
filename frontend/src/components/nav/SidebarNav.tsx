@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Settings2, Package, Users, Globe,
   FolderOpen, Terminal, Lock, Database, LogOut, Server,
-  Wifi, ArrowLeftRight, HardDrive,
+  Wifi, ArrowLeftRight, HardDrive, ScrollText,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { usePlugins } from '../../lib/plugins';
@@ -23,6 +23,7 @@ const iconMap: Record<string, React.ReactNode> = {
   swap_horiz:       <ArrowLeftRight size={15} strokeWidth={1.5} />,
   ftp:              <Server         size={15} strokeWidth={1.5} />,
   hard_drive:       <HardDrive      size={15} strokeWidth={1.5} />,
+  audit:            <ScrollText     size={15} strokeWidth={1.5} />,
 };
 const defaultIcon = <Server size={15} strokeWidth={1.5} />;
 

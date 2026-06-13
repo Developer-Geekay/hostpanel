@@ -52,6 +52,16 @@ CREATE TABLE IF NOT EXISTS mysql_databases (
     created_at TEXT,
     owner      TEXT
 );
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    actor    TEXT    NOT NULL,
+    action   TEXT    NOT NULL,
+    resource TEXT,
+    detail   TEXT,
+    status   TEXT    NOT NULL DEFAULT 'ok'
+);
 """
 
 

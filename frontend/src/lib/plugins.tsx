@@ -58,7 +58,7 @@ interface PackageData {
   dashboard_blocks?: RawDashboardBlock[];
 }
 
-const NATIVE_ROUTES = new Set(['dashboard', 'services', 'packages', 'users', 'dns', 'ssh', 'ssl']);
+const NATIVE_ROUTES = new Set(['dashboard', 'services', 'packages', 'users', 'dns', 'ssh', 'ssl', 'audit']);
 
 function mergeSections(packages: PackageData[]): NavSection[] {
   const sectionMap = new Map<string, NavSection>(

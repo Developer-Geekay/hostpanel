@@ -30,6 +30,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 
+from audit import log_action
 from auth import User, get_password_hash
 from deps import get_current_user, require_admin
 from portal_users import PortalUser, upsert_user as upsert_portal_user, delete_portal_user
@@ -177,6 +178,7 @@ async def create_user(request: UserCreateRequest, current_user: User = Depends(r
         upsert_portal_user(portal_user)
         logger.info(f"Portal access granted to {username}")
 
+    log_action(current_user.username, "user.create", resource=username)
     return {"message": f"User {username} successfully created"}
 
 
@@ -261,6 +263,7 @@ async def delete_user(username: str, remove_home: bool = True, current_user: Use
     except ValueError:
         pass
 
+    log_action(current_user.username, "user.delete", resource=username)
     return {"message": f"User {username} and all associated resources deleted"}
 
 
@@ -290,6 +293,7 @@ async def change_password(username: str, request: PasswordChangeRequest, current
     except subprocess.CalledProcessError as e:
         logger.error(f"chpasswd failed for {username}: {e.stderr}")
         raise HTTPException(status_code=500, detail="Failed to change password")
+    log_action(current_user.username, "user.password", resource=username)
     return {"message": f"Password changed for {username}"}
 
 
@@ -300,10 +304,12 @@ async def suspend_user(username: str, suspend: bool = True, current_user: User =
     if suspend:
         logger.info(f"Suspending system user: {username}")
         run_command(["sudo", "usermod", "-L", "-s", "/usr/sbin/nologin", username])
+        log_action(current_user.username, "user.suspend", resource=username)
         return {"message": f"User {username} suspended"}
     else:
         logger.info(f"Unsuspending system user: {username}")
         run_command(["sudo", "usermod", "-U", "-s", "/bin/bash", username])
+        log_action(current_user.username, "user.unsuspend", resource=username)
         return {"message": f"User {username} unsuspended"}
 
 
@@ -338,6 +344,7 @@ async def enable_ftp(username: str, request: FTPEnableRequest, current_user: Use
         raise HTTPException(status_code=500, detail=e.stderr.strip() or "Failed to enable FTP")
     _rebuild_ftp_db()
     logger.info(f"FTP enabled for {username}")
+    log_action(current_user.username, "user.ftp_enable", resource=username)
     return {"message": f"FTP enabled for {username}"}
 
 
@@ -354,4 +361,5 @@ async def disable_ftp(username: str, current_user: User = Depends(require_admin)
         raise HTTPException(status_code=500, detail=e.stderr.strip() or "Failed to disable FTP")
     _rebuild_ftp_db()
     logger.info(f"FTP disabled for {username}")
+    log_action(current_user.username, "user.ftp_disable", resource=username)
     return {"message": f"FTP disabled for {username}"}
