@@ -1,17 +1,9 @@
 """
 Portal User Credential Persistence & CRUD Controls
 
-This module manages the credentials and roles of panel portal users
-(separate from Linux system hosting users). 
-
-Key Features:
-- Bootstrapping: Automatically creates the initial administrator account on first-time launch.
-- File-Based Persistence: Saves all user credentials in the file `/opt/hostpanel/portal_users.json`
-  with restricted filesystem permissions (0o600).
-- Models & Validation: Implements `PortalUser` data schemas with roles (`admin`, `user`), disabled state flags, and deletion safety protections.
-- CRUD Actions: Includes functions to load, save, insert/update, and delete portal users.
+Manages credentials and roles of panel portal users (separate from Linux hosting users).
+Backed by SQLite via db.py — previously used portal_users.json (migrated automatically).
 """
-import json
 import logging
 import os
 from typing import List, Literal, Optional
@@ -19,9 +11,11 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel
 
 from auth import get_password_hash
+from db import get_conn
 
 logger = logging.getLogger(__name__)
 
+# Kept so db.py migration path can read it at startup
 PORTAL_USERS_FILE = os.environ.get("PORTAL_USERS_FILE", "/opt/hostpanel/portal_users.json")
 
 
@@ -29,79 +23,69 @@ class PortalUser(BaseModel):
     username: str
     hashed_password: str
     role: Literal["admin", "user"]
-    linux_user: Optional[str] = None  # None for admin portal account
+    linux_user: Optional[str] = None
     disabled: bool = False
-    protected: bool = False           # True = cannot be deleted via API
-
-
-# ── Persistence ────────────────────────────────────────────────────────────────
-
-def load_users() -> List[PortalUser]:
-    """Load portal users from JSON file. Returns empty list if file missing."""
-    if not os.path.exists(PORTAL_USERS_FILE):
-        return []
-    try:
-        with open(PORTAL_USERS_FILE, "r") as f:
-            data = json.load(f)
-        return [PortalUser(**u) for u in data]
-    except Exception as e:
-        logger.error(f"Failed to load portal users from {PORTAL_USERS_FILE}: {e}")
-        return []
-
-
-def save_users(users: List[PortalUser]):
-    """Save portal users to JSON file with restricted permissions."""
-    os.makedirs(os.path.dirname(PORTAL_USERS_FILE), exist_ok=True)
-    with open(PORTAL_USERS_FILE, "w") as f:
-        json.dump([u.model_dump() for u in users], f, indent=2)
-    try:
-        os.chmod(PORTAL_USERS_FILE, 0o600)
-    except Exception:
-        pass  # may not be root during development
+    protected: bool = False
 
 
 # ── CRUD ───────────────────────────────────────────────────────────────────────
 
+def load_users() -> List[PortalUser]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM portal_users").fetchall()
+    return [_row_to_user(r) for r in rows]
+
+
+def save_users(users: List[PortalUser]):
+    """Replace all portal users atomically (used by bulk operations)."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM portal_users")
+        for u in users:
+            conn.execute(
+                "INSERT INTO portal_users VALUES (?,?,?,?,?,?)",
+                (u.username, u.hashed_password, u.role, u.linux_user,
+                 int(u.disabled), int(u.protected)),
+            )
+
+
 def get_user(username: str) -> Optional[PortalUser]:
-    """Look up a portal user by username."""
-    return next((u for u in load_users() if u.username == username), None)
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM portal_users WHERE username = ?", (username,)
+        ).fetchone()
+    return _row_to_user(row) if row else None
 
 
 def upsert_user(user: PortalUser):
-    """Insert or update a portal user record."""
-    users = load_users()
-    users = [u for u in users if u.username != user.username]
-    users.append(user)
-    save_users(users)
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO portal_users VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT(username) DO UPDATE SET "
+            "hashed_password=excluded.hashed_password, role=excluded.role, "
+            "linux_user=excluded.linux_user, disabled=excluded.disabled, "
+            "protected=excluded.protected",
+            (user.username, user.hashed_password, user.role, user.linux_user,
+             int(user.disabled), int(user.protected)),
+        )
     logger.info(f"Portal user upserted: {user.username} (role={user.role})")
 
 
 def delete_portal_user(username: str):
-    """
-    Remove a portal user. Raises ValueError if user is protected.
-    Silently succeeds if user does not exist.
-    """
-    users = load_users()
-    target = next((u for u in users if u.username == username), None)
-    if target is None:
-        return  # no-op
-    if target.protected:
+    user = get_user(username)
+    if user is None:
+        return
+    if user.protected:
         raise ValueError(f"Portal user '{username}' is protected and cannot be deleted.")
-    save_users([u for u in users if u.username != username])
+    with get_conn() as conn:
+        conn.execute("DELETE FROM portal_users WHERE username = ?", (username,))
     logger.info(f"Portal user deleted: {username}")
 
 
 # ── Bootstrap ──────────────────────────────────────────────────────────────────
 
 def ensure_admin_exists(default_username: str, default_password: str):
-    """
-    Called at startup. If the admin portal user doesn't exist yet,
-    create it (first-install bootstrap).
-    """
-    existing = get_user(default_username)
-    if existing is not None:
-        return  # already set up
-
+    if get_user(default_username) is not None:
+        return
     admin = PortalUser(
         username=default_username,
         hashed_password=get_password_hash(default_password),
@@ -112,3 +96,16 @@ def ensure_admin_exists(default_username: str, default_password: str):
     )
     upsert_user(admin)
     logger.info(f"Admin portal user bootstrapped: {default_username}")
+
+
+# ── Internal ───────────────────────────────────────────────────────────────────
+
+def _row_to_user(row) -> PortalUser:
+    return PortalUser(
+        username=row["username"],
+        hashed_password=row["hashed_password"],
+        role=row["role"],
+        linux_user=row["linux_user"],
+        disabled=bool(row["disabled"]),
+        protected=bool(row["protected"]),
+    )

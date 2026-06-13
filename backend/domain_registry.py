@@ -1,47 +1,56 @@
 """
 Domain Registry Persistence & Access Controller
 
-This module manages the storage, loading, and access-control checks for domains
-and subdomains registered in the control panel.
+Manages storage, loading, and access-control for domains and subdomains.
+Backed by SQLite via db.py — previously used domains.json / subdomains.json
+(migrated automatically on first startup).
 
-Features:
-- Thread-safe loading and saving of the JSON files: `/opt/hostpanel/domains.json` and `/opt/hostpanel/subdomains.json`.
-- Security ownership verification via `check_domain_access` to ensure non-admin users can only modify/view their own domains.
+Callers (core routers and nginx plugin) use the same function signatures as before.
 """
-import json
-import os
 from typing import List
 
 from fastapi import HTTPException
 
-DOMAINS_FILE    = "/opt/hostpanel/domains.json"
-SUBDOMAINS_FILE = "/opt/hostpanel/subdomains.json"
+from db import get_conn
 
 
 def _load_domains() -> List[dict]:
-    if not os.path.exists(DOMAINS_FILE):
-        return []
-    with open(DOMAINS_FILE, "r") as f:
-        return json.load(f)
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM domains").fetchall()
+    return [dict(r) for r in rows]
 
 
 def _save_domains(domains: List[dict]):
-    os.makedirs(os.path.dirname(DOMAINS_FILE), exist_ok=True)
-    with open(DOMAINS_FILE, "w") as f:
-        json.dump(domains, f, indent=2)
+    """Replace all domain records atomically."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM domains")
+        for d in domains:
+            conn.execute(
+                "INSERT INTO domains (domain_name, username, document_root, status, created_at) "
+                "VALUES (?,?,?,?,?)",
+                (d["domain_name"], d.get("username", ""), d.get("document_root", ""),
+                 d.get("status", "active"), d.get("created_at")),
+            )
 
 
 def _load_subdomains() -> List[dict]:
-    if not os.path.exists(SUBDOMAINS_FILE):
-        return []
-    with open(SUBDOMAINS_FILE, "r") as f:
-        return json.load(f)
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM subdomains").fetchall()
+    return [dict(r) for r in rows]
 
 
 def _save_subdomains(subdomains: List[dict]):
-    os.makedirs(os.path.dirname(SUBDOMAINS_FILE), exist_ok=True)
-    with open(SUBDOMAINS_FILE, "w") as f:
-        json.dump(subdomains, f, indent=2)
+    """Replace all subdomain records atomically."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM subdomains")
+        for s in subdomains:
+            conn.execute(
+                "INSERT INTO subdomains (fqdn, subdomain, parent_domain, document_root, username, status) "
+                "VALUES (?,?,?,?,?,?)",
+                (s["fqdn"], s.get("subdomain", s["fqdn"].split(".")[0]),
+                 s.get("parent_domain", ""), s.get("document_root", ""),
+                 s.get("username", ""), s.get("status", "active")),
+            )
 
 
 def check_domain_access(domain_record: dict, current_user) -> None:

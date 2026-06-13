@@ -29,6 +29,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from auth import Token, create_access_token, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES
 from deps import get_current_user, oauth2_scheme
+from db import init_db
 from portal_users import ensure_admin_exists, get_user as get_portal_user
 from routers import (
     dashboard_router,
@@ -99,6 +100,7 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
+    init_db()
     ensure_admin_exists(default_username, default_password)
     logger.info("HostPanel API is starting up...")
     # Let installed plugins do any on-startup provisioning (idempotent)
