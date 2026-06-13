@@ -1,12 +1,36 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Settings2, Package, Users, Globe, FolderOpen,
-  Terminal, Lock, Database, LogOut, Server, Wifi, ArrowLeftRight,
+  Terminal, Lock, Database, LogOut, Server, Wifi, ArrowLeftRight, ScrollText,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { usePluginNav, NavItemWithSection } from '../../lib/plugins';
 import { ThemePicker } from '../ui/ThemePicker';
-import { ReactNode } from 'react';
+import { ReactNode, useState, useEffect, useCallback } from 'react';
+
+const LOGO_FONTS = ['Sportifity', 'Rukyltronic', 'Swap Souce', 'JHC Sineas'];
+const LS_KEY = 'hp-logo-font-idx';
+
+function useLogoFont() {
+  const [idx, setIdx] = useState(() => {
+    const s = localStorage.getItem(LS_KEY);
+    return s ? Math.min(parseInt(s, 10), LOGO_FONTS.length - 1) : 0;
+  });
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-logo', `'${LOGO_FONTS[idx]}', var(--font-mono)`);
+  }, [idx]);
+
+  const cycle = useCallback(() => {
+    setIdx(i => {
+      const next = (i + 1) % LOGO_FONTS.length;
+      localStorage.setItem(LS_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  return { fontName: LOGO_FONTS[idx], cycle };
+}
 
 const iconMap: Record<string, ReactNode> = {
   speed:            <LayoutDashboard size={18} strokeWidth={1.5} />,
@@ -22,6 +46,7 @@ const iconMap: Record<string, ReactNode> = {
   web:              <Globe size={18} strokeWidth={1.5} />,
   swap_horiz:       <ArrowLeftRight size={18} strokeWidth={1.5} />,
   ftp:              <Server size={18} strokeWidth={1.5} />,
+  audit:            <ScrollText size={18} strokeWidth={1.5} />,
 };
 
 function RailLink({ to, icon, label }: { to: string; icon: string; label: string }) {
@@ -47,10 +72,11 @@ export function RailNav() {
   const { user, isAdmin, logout } = useAuth();
   const pluginNav = usePluginNav();
   const navigate  = useNavigate();
+  const { fontName, cycle } = useLogoFont();
 
   return (
     <nav className="rail">
-      <div className="rail-logo">HP</div>
+      <div className="rail-logo" onClick={cycle} title={fontName} style={{ cursor: 'pointer' }}>HP</div>
 
       {isAdmin && (
         <>
@@ -72,8 +98,9 @@ export function RailNav() {
 
       {isAdmin && (
         <>
-          <RailLink to="/app/ssh" icon="terminal" label="SSH Keys" />
-          <RailLink to="/app/ssl" icon="lock"     label="SSL" />
+          <RailLink to="/app/ssh"   icon="terminal" label="SSH Keys" />
+          <RailLink to="/app/ssl"   icon="lock"     label="SSL" />
+          <RailLink to="/app/audit" icon="audit"    label="Audit Log" />
           <PluginRailLinks items={pluginNav} section="security" />
         </>
       )}

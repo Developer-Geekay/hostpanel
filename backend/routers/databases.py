@@ -7,18 +7,16 @@ Path Prefix: `/cpanelapi/databases`
 Access Control: Injected current user dependency (standard users are scoped to their owned DB records).
 
 Features:
-- File Persistence: Stores database/user metadata in `/opt/hostpanel/databases.json`.
+- SQLite Persistence: Stores database/user metadata in hostpanel.db (mysql_databases table).
 - Direct MySQL client execution: Connects dynamically via `/root/.my.cnf` configuration options.
 - Sizing stats: Inspects `information_schema.tables` size counts per database.
 
 Endpoints:
 - `GET /mysql`: Lists MySQL databases (scoped to active user or all for admins).
 - `POST /mysql`: Creates a new MySQL database and associated local database user with a secure random password.
-- `DELETE /mysql/{db_name}`: Drops the MySQL database, deletes the database user, and cleans local JSON mappings.
+- `DELETE /mysql/{db_name}`: Drops the MySQL database, deletes the database user, and cleans metadata.
 """
-import json
 import logging
-import os
 import random
 import string
 import subprocess
@@ -27,13 +25,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 
+from audit import log_action
 from auth import User
 from deps import get_current_user
+from db import get_conn
 
 router = APIRouter(prefix="/cpanelapi/databases", tags=["Databases"])
 logger = logging.getLogger(__name__)
 
-DB_STORE = "/opt/hostpanel/databases.json"
 MYSQL_CMD = ["mysql", "--defaults-extra-file=/root/.my.cnf"]
 
 
@@ -58,19 +57,20 @@ class CreateDbResponse(DbRecord):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _load_store() -> List[dict]:
-    if not os.path.exists(DB_STORE):
-        return []
-    with open(DB_STORE, "r") as f:
-        records = json.load(f)
-    for r in records:
-        r.setdefault("owner", None)  # back-compat migration
-    return records
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM mysql_databases").fetchall()
+    return [dict(r) for r in rows]
 
 
 def _save_store(records: List[dict]):
-    os.makedirs(os.path.dirname(DB_STORE), exist_ok=True)
-    with open(DB_STORE, "w") as f:
-        json.dump(records, f, indent=2)
+    """Replace all mysql_database records atomically."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM mysql_databases")
+        for r in records:
+            conn.execute(
+                "INSERT INTO mysql_databases (name, db_user, created_at, owner) VALUES (?,?,?,?)",
+                (r["name"], r["db_user"], r.get("created_at"), r.get("owner")),
+            )
 
 
 def _random_password(length: int = 20) -> str:
@@ -161,6 +161,7 @@ async def create_mysql_database(req: CreateDbRequest, current_user: User = Depen
     _save_store(records)
 
     logger.info(f"MySQL database created: {req.name} (user: {db_user}, owner: {current_user.linux_user})")
+    log_action(current_user.username, "db.create", resource=req.name)
     return CreateDbResponse(
         name=req.name,
         db_user=db_user,
@@ -191,4 +192,5 @@ async def delete_mysql_database(db_name: str, current_user: User = Depends(get_c
 
     _save_store([r for r in records if r["name"] != db_name])
     logger.info(f"MySQL database deleted: {db_name}")
+    log_action(current_user.username, "db.delete", resource=db_name)
     return {"message": f"Database {db_name} and user {db_user} deleted"}

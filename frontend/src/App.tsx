@@ -8,7 +8,7 @@ import { Shell } from './components/layout/Shell';
 import { PackageShell } from './components/pkg/PackageShell';
 import { PageSpinner } from './components/ui/Spinner';
 
-const Login    = lazy(() => import('./features/auth/Login'));
+const Login     = lazy(() => import('./features/auth/Login'));
 const Dashboard = lazy(() => import('./features/dashboard/Dashboard'));
 const Dns       = lazy(() => import('./features/dns/Dns'));
 const Users     = lazy(() => import('./features/users/Users'));
@@ -16,6 +16,7 @@ const Ssh       = lazy(() => import('./features/ssh/Ssh'));
 const Ssl       = lazy(() => import('./features/ssl/Ssl'));
 const Services  = lazy(() => import('./features/services/Services'));
 const Packages  = lazy(() => import('./features/packages/Packages'));
+const AuditLog  = lazy(() => import('./features/audit/AuditLog'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -47,6 +48,7 @@ function AppRoutes() {
         <Route path="dns"       element={<AdminRoute><S><Dns /></S></AdminRoute>} />
         <Route path="ssh"       element={<AdminRoute><S><Ssh /></S></AdminRoute>} />
         <Route path="ssl"       element={<AdminRoute><S><Ssl /></S></AdminRoute>} />
+        <Route path="audit"     element={<AdminRoute><S><AuditLog /></S></AdminRoute>} />
         <Route path="pkg/:slug" element={<PackageShell />} />
         <Route path=":slug"     element={<PackageShell />} />
       </Route>
