@@ -126,3 +126,6 @@ async def download_file(path: str, current_user: User = Depends(get_current_user
     if not p.exists() or p.is_dir():
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(path=str(p), filename=p.name, media_type="application/octet-stream")
+
+# Backward-compat alias — plugins that imported _safe_path from this module before Phase 7
+_safe_path = fs.safe_path

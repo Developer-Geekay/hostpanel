@@ -250,9 +250,12 @@ async def update_package(request: PackageUpdateRequest, background_tasks: Backgr
         raise HTTPException(status_code=400, detail="Invalid pip package source")
     try:
         logs = await asyncio.to_thread(lifecycle.pip_install, source)
+        pkg_slug = request.package_name.split("-")[1] if request.package_name.count("-") >= 1 else request.package_name
+        fe_logs: list[str] = []
+        installer.deploy_frontend_from_dist(request.package_name, pkg_slug, fe_logs)
         save_registry_entry(request.package_name, source, detect_source_type(source), is_update=True)
         background_tasks.add_task(lifecycle.restart_server)
-        return {"status": "success", "message": f"Updated {source}. Server will restart shortly.", "logs": logs}
+        return {"status": "success", "message": f"Updated {source}. Server will restart shortly.", "logs": logs + "\n" + "\n".join(fe_logs)}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Update failed: {e.stderr}")
 
@@ -327,10 +330,13 @@ async def install_package(request: PackageInstallRequest, background_tasks: Back
 
     try:
         logs = await asyncio.to_thread(lifecycle.pip_install, source)
-        background_tasks.add_task(lifecycle.restart_server)
         pkg_name = re.split(r'[><=!~;@\s]', source)[0].strip()
+        pkg_slug = pkg_name.split("-")[1] if pkg_name.count("-") >= 1 else pkg_name
+        fe_logs: list[str] = []
+        installer.deploy_frontend_from_dist(pkg_name, pkg_slug, fe_logs)
         save_registry_entry(pkg_name, source, detect_source_type(source))
-        return {"status": "success", "message": f"Successfully installed {source}. Server will restart shortly.", "logs": logs}
+        background_tasks.add_task(lifecycle.restart_server)
+        return {"status": "success", "message": f"Successfully installed {source}. Server will restart shortly.", "logs": logs + "\n" + "\n".join(fe_logs)}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Installation failed: {e.stderr}")
 
@@ -364,6 +370,8 @@ async def uninstall_package(request: PackageUninstallRequest, background_tasks: 
         raise HTTPException(status_code=500, detail=f"Uninstall hook failed: {e}")
     try:
         logs = lifecycle.pip_uninstall(request.package_name)
+        pkg_slug = request.package_name.split("-")[1] if request.package_name.count("-") >= 1 else request.package_name
+        lifecycle.remove_frontend_bundle(pkg_slug)
         background_tasks.add_task(lifecycle.restart_server)
         return {"status": "success", "message": f"Successfully uninstalled {request.package_name}. Server will restart shortly.", "logs": logs}
     except subprocess.CalledProcessError as e:

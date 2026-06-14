@@ -165,6 +165,64 @@ def _install_frontend(extract_dir: str, pkg_slug: str, logs: list, is_update: bo
             logs.append(f"{'Updated' if is_update else 'Installed'} frontend: packages/{pkg_slug}/{fname}")
 
 
+def deploy_frontend_from_dist(package_name: str, pkg_slug: str, logs: list) -> bool:
+    """
+    Find and deploy the frontend bundle from an already pip-installed distribution.
+    Used when installing/updating via pip source rather than a zip archive.
+    Two strategies: scan dist manifest first, fall back to module __file__ location.
+    """
+    importlib.invalidate_caches()
+    dest = os.path.join(FRONTEND_DIR, "packages", pkg_slug)
+    deployed = False
+
+    # Strategy 1: scan distribution manifest for files under a 'frontend' path segment
+    try:
+        dist = importlib.metadata.distribution(package_name)
+        for p in (dist.files or []):
+            if "frontend" not in p.parts:
+                continue
+            abs_path = dist.locate_file(p)
+            if abs_path.is_file():
+                os.makedirs(dest, exist_ok=True)
+                shutil.copy2(str(abs_path), os.path.join(dest, abs_path.name))
+                logs.append(f"Deployed frontend: packages/{pkg_slug}/{abs_path.name}")
+                deployed = True
+    except Exception:
+        pass
+
+    # Strategy 2: locate via the installed module's __file__
+    if not deployed:
+        try:
+            for ep in importlib.metadata.entry_points().select(group="hostpanel.modules"):
+                if ep.name != pkg_slug:
+                    continue
+                mod = ep.load()
+                mod_file = getattr(mod, "__file__", None)
+                if not mod_file:
+                    break
+                for candidate in [
+                    os.path.join(os.path.dirname(mod_file), "frontend"),
+                    os.path.join(os.path.dirname(os.path.dirname(mod_file)), "frontend"),
+                ]:
+                    if not os.path.isdir(candidate):
+                        continue
+                    os.makedirs(dest, exist_ok=True)
+                    for fname in os.listdir(candidate):
+                        src_f = os.path.join(candidate, fname)
+                        if os.path.isfile(src_f):
+                            shutil.copy2(src_f, os.path.join(dest, fname))
+                            logs.append(f"Deployed frontend: packages/{pkg_slug}/{fname}")
+                            deployed = True
+                if deployed:
+                    break
+        except Exception:
+            pass
+
+    if not deployed:
+        logs.append(f"Note: no frontend bundle found in distribution '{package_name}'")
+    return deployed
+
+
 async def _run_install_hook(filename: str, pkg_slug: str, is_update: bool, logs: list) -> None:
     importlib.invalidate_caches()
     pkg_name = filename.rsplit('-', 1)[0].lower()

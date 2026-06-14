@@ -6,6 +6,7 @@ import importlib
 import importlib.metadata
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -48,6 +49,13 @@ def pip_uninstall(package_name: str) -> str:
         capture_output=True, text=True, check=True,
     )
     return result.stdout + "\n" + result.stderr
+
+
+def remove_frontend_bundle(pkg_slug: str) -> None:
+    dest = os.path.join(FRONTEND_DIR, "packages", pkg_slug)
+    if os.path.isdir(dest):
+        shutil.rmtree(dest)
+        _log.info("Removed frontend bundle: %s", dest)
 
 
 def pip_install(source: str) -> str:
