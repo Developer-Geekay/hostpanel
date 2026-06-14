@@ -69,6 +69,15 @@ CREATE TABLE IF NOT EXISTS dns_credentials (
     api_token  TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+
+CREATE TABLE IF NOT EXISTS ssh_keys (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    linux_user  TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    label       TEXT NOT NULL DEFAULT '',
+    added_at    TEXT NOT NULL DEFAULT (date('now')),
+    UNIQUE(linux_user, fingerprint)
+);
 """
 
 
