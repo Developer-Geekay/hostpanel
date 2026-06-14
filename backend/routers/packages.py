@@ -368,3 +368,7 @@ async def uninstall_package(request: PackageUninstallRequest, background_tasks: 
         return {"status": "success", "message": f"Successfully uninstalled {request.package_name}. Server will restart shortly.", "logs": logs}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Uninstallation failed: {e.stderr}")
+
+
+# Public alias — consumed by modules/services/systemd.py
+get_installed_modules = _get_installed_modules

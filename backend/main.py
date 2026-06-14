@@ -149,7 +149,7 @@ default_password = os.environ.get("DEFAULT_PASSWORD", "admin")
 
 # Include module routers securely
 app.include_router(audit_router,     dependencies=[Depends(get_current_user)])
-app.include_router(dashboard_router, dependencies=[Depends(get_current_user)])
+app.include_router(dashboard_router)  # handles its own auth (HTTP: require_admin, WS: token query param)
 app.include_router(users_router, dependencies=[Depends(get_current_user)])
 app.include_router(ssh_router, dependencies=[Depends(get_current_user)])
 app.include_router(databases_router, dependencies=[Depends(get_current_user)])
