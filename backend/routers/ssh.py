@@ -1,53 +1,87 @@
-"""
-SSH Credentials & Shell Access API Router
-
-Exposes endpoints for editing SSH public keys and managing secure shell permissions.
-
-Path Prefix: `/cpanelapi/ssh`
-Access Control: Injected current user dependency (standard users are scoped to their own keys).
-
-Endpoints:
-- `GET /keys`: Lists SSH public keys registered for a system user (Mock).
-- `POST /keys`: Adds a new SSH public key to the user's `authorized_keys` file (Mock).
-- `DELETE /keys/{key_id}`: Removes an authorized public key by its ID (Mock).
-- `PUT /access`: Enables/disables system shell access for a user (Admin-only; Mock).
-"""
-import logging
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from typing import List
 
-from deps import get_current_user, require_admin
 from auth import User
+from deps import get_current_user, require_admin
+from modules.audit.logger import log_action
+from modules.ssh import keys as ssh_keys
+from modules.ssh.exceptions import DuplicateKey, InvalidKeyFormat, KeyNotFound
 
 router = APIRouter(prefix="/cpanelapi/ssh", tags=["SSH"])
-logger = logging.getLogger(__name__)
 
 
-def _check_ssh_access(username: str, current_user: User):
-    if current_user.role != "admin" and current_user.linux_user != username:
+class SshKey(BaseModel):
+    id: str
+    type: str
+    fingerprint: str
+    label: str
+    added: str
+
+
+class AddKeyRequest(BaseModel):
+    public_key: str
+    label: str = ""
+
+
+def _check_access(linux_user: str, current_user: User) -> None:
+    if current_user.role != "admin" and current_user.linux_user != linux_user:
         raise HTTPException(status_code=403, detail="Access denied")
 
 
-@router.get("/keys")
-async def list_ssh_keys(username: str, current_user: User = Depends(get_current_user)):
-    """List authorized keys for a user."""
-    _check_ssh_access(username, current_user)
-    return {"keys": []}
+def _resolve_linux_user(username: str | None, current_user: User) -> str:
+    lu = username or current_user.linux_user or current_user.username
+    _check_access(lu, current_user)
+    return lu
 
-@router.post("/keys")
-async def add_ssh_key(username: str, key: str, current_user: User = Depends(get_current_user)):
-    """Add a new SSH public key string to user's authorized_keys."""
-    _check_ssh_access(username, current_user)
-    logger.info(f"Mock adding SSH key for user {username}")
-    return {"message": f"SSH key added for {username}"}
 
-@router.delete("/keys/{key_id}")
-async def delete_ssh_key(key_id: str, current_user: User = Depends(get_current_user)):
-    """Remove a specific key."""
-    return {"message": f"SSH key {key_id} deleted"}
+@router.get("/keys", response_model=List[SshKey])
+async def list_ssh_keys(
+    username: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    lu = _resolve_linux_user(username, current_user)
+    return ssh_keys.list_keys(lu)
+
+
+@router.post("/keys", response_model=SshKey)
+async def add_ssh_key(
+    body: AddKeyRequest,
+    username: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    lu = _resolve_linux_user(username, current_user)
+    try:
+        key = ssh_keys.add_key(lu, body.public_key, body.label)
+    except InvalidKeyFormat as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except DuplicateKey as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    log_action(current_user.username, "ssh.add_key", lu, key["fingerprint"])
+    return key
+
+
+@router.delete("/keys/{fingerprint:path}")
+async def delete_ssh_key(
+    fingerprint: str,
+    username: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    lu = _resolve_linux_user(username, current_user)
+    try:
+        ssh_keys.remove_key(lu, fingerprint)
+    except KeyNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    log_action(current_user.username, "ssh.remove_key", lu, fingerprint)
+    return {"message": "Key removed"}
+
 
 @router.put("/access")
-async def toggle_ssh_access(username: str, enable: bool, current_user: User = Depends(require_admin)):
-    """Toggle shell access for user. Admin only."""
-    access_status = "enabled" if enable else "disabled"
-    logger.info(f"Mock toggling SSH access for {username} to {access_status}")
-    return {"message": f"SSH access {access_status} for {username}"}
+async def toggle_ssh_access(
+    username: str,
+    enable: bool,
+    current_user: User = Depends(require_admin),
+):
+    status = "enabled" if enable else "disabled"
+    log_action(current_user.username, f"ssh.access_{status}", username)
+    return {"message": f"SSH access {status} for {username}"}

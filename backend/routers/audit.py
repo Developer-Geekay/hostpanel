@@ -1,19 +1,9 @@
-"""
-Audit Log API Router
-
-Path Prefix: `/cpanelapi/audit`
-Access Control: Admin only.
-
-Endpoints:
-- `GET /`: Returns paginated audit log entries, newest first.
-- `DELETE /`: Clears all audit log entries (Admin only).
-"""
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from typing import List, Optional
 
 from deps import require_admin
-from db import get_conn
+from modules.audit import queries as audit_q
 
 router = APIRouter(prefix="/cpanelapi/audit", tags=["Audit"])
 
@@ -34,24 +24,15 @@ async def list_audit_log(
     offset: int = Query(0, ge=0),
     _=Depends(require_admin),
 ):
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT id, ts, actor, action, resource, detail, status "
-            "FROM audit_log ORDER BY id DESC LIMIT ? OFFSET ?",
-            (limit, offset),
-        ).fetchall()
-    return [dict(r) for r in rows]
+    return audit_q.list_entries(limit, offset)
 
 
 @router.get("/count")
 async def audit_count(_=Depends(require_admin)):
-    with get_conn() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
-    return {"total": total}
+    return {"total": audit_q.count_entries()}
 
 
 @router.delete("")
 async def clear_audit_log(_=Depends(require_admin)):
-    with get_conn() as conn:
-        conn.execute("DELETE FROM audit_log")
+    audit_q.clear_entries()
     return {"message": "Audit log cleared"}

@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 
-from audit import log_action
+from modules.audit.logger import log_action
 from auth import User
 from deps import get_current_user
 from domain_registry import _load_domains, check_domain_access
