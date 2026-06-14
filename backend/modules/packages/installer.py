@@ -93,6 +93,12 @@ def _copy_dir(extract_dir: str, subdir: str, pkg_root: str, logs: list,
     for fname in real:
         src = os.path.join(src_dir, fname)
         dst = os.path.join(pkg_root, fname)
+        # Unlink before replacing executables — Linux raises ETXTBSY (errno 26)
+        # if you write into a running binary. Unlinking removes the dir entry
+        # while the old inode stays alive for any running process; the new copy
+        # lands at the same path and is picked up by subsequent executions.
+        if executable and os.path.exists(dst):
+            os.unlink(dst)
         shutil.copy2(src, dst)
         if executable:
             os.chmod(dst, 0o755)
