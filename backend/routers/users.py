@@ -94,9 +94,10 @@ async def get_user(username: str, current_user: User = Depends(get_current_user)
 async def get_user_resources(username: str, current_user: User = Depends(require_admin)):
     _guard(username)
     from .databases import _load_store as _load_databases
-    LETSENCRYPT_DIR = "/etc/letsencrypt/live"
+    import modules.ssl.db as ssl_db
     domain_names = [d["domain_name"] for d in _load_domains() if d.get("username") == username]
-    ssl_certs = [d for d in domain_names if os.path.exists(f"{LETSENCRYPT_DIR}/{d}")]
+    ssl_certs = [d for d in domain_names
+                 if (lambda c: c and c["status"] in ("valid", "expiring_soon"))(ssl_db.get_cert(d))]
     databases = [r["name"] for r in _load_databases() if r.get("owner") == username]
     return {
         "username": username,

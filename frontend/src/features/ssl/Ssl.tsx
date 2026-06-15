@@ -1,21 +1,14 @@
-import { useState } from 'react';
-import { Plus, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { PageSpinner } from '../../components/ui/Spinner';
 import { Toggle } from '../../components/ui/Toggle';
 import { useSsl } from './hooks/useSsl';
-import { CertStatusRow } from './components/CertStatusRow';
-import { IssueProgressModal } from './components/IssueProgressModal';
-import { ImportCertModal } from './components/ImportCertModal';
+import { CertCard } from './components/CertCard';
+import { CertDomainModal } from './components/CertDomainModal';
 
 export default function Ssl() {
   const ssl = useSsl();
-  const [expanded, setExpanded] = useState<string | null>(null);
-
-  function toggleExpand(domain: string) {
-    setExpanded(prev => (prev === domain ? null : domain));
-  }
 
   return (
     <div className="page">
@@ -23,20 +16,15 @@ export default function Ssl() {
       <div className="page-header">
         <div>
           <div className="page-title">SSL Certificates</div>
-          <div className="page-desc">Let's Encrypt TLS certificates</div>
+          <div className="page-desc">DNS-01 certificates via Let's Encrypt + PowerDNS</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-2)', cursor: 'pointer', textTransform: 'none', letterSpacing: 0 }}>
-            <Toggle checked={ssl.autoRenew} onChange={ssl.toggleAutoRenew} />
-            Auto-renew
-          </label>
-          <Button variant="primary" size="sm" icon={<Plus size={13} strokeWidth={1.5} />} onClick={() => ssl.openIssue()}>
-            Issue Certificate
-          </Button>
-        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-2)', cursor: 'pointer', textTransform: 'none', letterSpacing: 0 }}>
+          <Toggle checked={ssl.autoRenew} onChange={ssl.toggleAutoRenew} />
+          Auto-renew
+        </label>
       </div>
 
-      {/* Table */}
+      {/* Content */}
       {ssl.loading ? (
         <PageSpinner />
       ) : ssl.certs.length === 0 ? (
@@ -46,85 +34,74 @@ export default function Ssl() {
           <div className="empty-desc">Add a domain in Web Server first, then issue a certificate here.</div>
         </div>
       ) : (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Domain</th>
-                  <th>Status</th>
-                  <th>Expiry</th>
-                  <th>Issuer</th>
-                  <th>Force HTTPS</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ssl.certs.map(cert => (
-                  <CertStatusRow
-                    key={cert.domain}
-                    cert={cert}
-                    expanded={expanded === cert.domain}
-                    togglingHttps={ssl.togglingHttps}
-                    onToggleExpand={() => toggleExpand(cert.domain)}
-                    onToggleHttps={ssl.toggleForceHttps}
-                    onIssue={ssl.openIssue}
-                    onRenew={ssl.openRenew}
-                    onImport={ssl.openImport}
-                    onDelete={ssl.setDeleteTarget}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {ssl.certs.map(cert => (
+            <CertCard
+              key={cert.root_domain}
+              cert={cert}
+              onIssue={ssl.openIssue}
+              onEdit={ssl.openEdit}
+              onRenew={ssl.setRenewTarget}
+              onDelete={ssl.setDeleteTarget}
+            />
+          ))}
         </div>
       )}
 
-      {/* Issue / Renew + progress modal */}
-      <IssueProgressModal
-        open={ssl.modalOpen}
-        mode={ssl.modalMode}
-        domain={ssl.issueDomain}
-        setDomain={ssl.setIssueDomain}
-        useWildcard={ssl.useWildcard}
-        setUseWildcard={ssl.setUseWildcard}
+      {/* Domain selector + certbot log modal */}
+      <CertDomainModal
+        open={ssl.certModalOpen}
+        mode={ssl.certModalMode}
+        rootDomain={ssl.certModalRoot}
+        loadingFqdns={ssl.loadingFqdns}
+        availableFqdns={ssl.availableFqdns}
+        selectedFqdns={ssl.selectedFqdns}
         submitting={ssl.submitting}
         certLog={ssl.certLog}
         logBoxRef={ssl.logBoxRef}
-        onClose={ssl.closeModal}
-        onSubmitIssue={ssl.submitIssue}
-        onSubmitRenew={ssl.submitRenew}
+        onToggleFqdn={ssl.toggleFqdn}
+        onSelectAll={ssl.selectAllFqdns}
+        onDeselectAll={ssl.deselectAllFqdns}
+        onClose={ssl.closeCertModal}
+        onSubmit={ssl.submitCertModal}
       />
 
-      {/* Import modal */}
-      <ImportCertModal
-        domain={ssl.importDomain}
-        cert={ssl.importCert}
-        setCert={ssl.setImportCert}
-        privKey={ssl.importKey}
-        setPrivKey={ssl.setImportKey}
-        chain={ssl.importChain}
-        setChain={ssl.setImportChain}
-        importing={ssl.importing}
-        onClose={ssl.closeImport}
-        onSubmit={ssl.submitImport}
-      />
-
-      {/* Revoke confirm modal */}
+      {/* Renew confirm */}
       <Modal
-        open={!!ssl.deleteTarget}
-        onClose={() => { if (!ssl.deleting) ssl.setDeleteTarget(''); }}
-        title="Revoke Certificate"
+        open={!!ssl.renewTarget}
+        onClose={() => { if (!ssl.renewing) ssl.setRenewTarget(null); }}
+        title="Force Renew Certificate"
         width={340}
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => ssl.setDeleteTarget('')} disabled={ssl.deleting}>Cancel</Button>
-            <Button variant="danger" size="sm" loading={ssl.deleting} onClick={ssl.revokeCert}>Revoke</Button>
+            <Button variant="ghost" size="sm" onClick={() => ssl.setRenewTarget(null)} disabled={ssl.renewing}>Cancel</Button>
+            <Button variant="primary" size="sm" loading={ssl.renewing} onClick={ssl.submitRenew}>Renew Now</Button>
           </div>
         }
       >
-        <p style={{ fontSize: 13, color: 'var(--text-2)' }}>
-          Revoke certificate for <strong style={{ color: 'var(--text)' }}>{ssl.deleteTarget}</strong>?
+        <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>
+          Force-renew the certificate for{' '}
+          <strong style={{ color: 'var(--text)' }}>{ssl.renewTarget}</strong>?
+          Certbot will request a new certificate regardless of expiry.
+        </p>
+      </Modal>
+
+      {/* Delete confirm */}
+      <Modal
+        open={!!ssl.deleteTarget}
+        onClose={() => { if (!ssl.deleting) ssl.setDeleteTarget(null); }}
+        title="Delete Certificate"
+        width={340}
+        footer={
+          <div className="actions" style={{ justifyContent: 'flex-end' }}>
+            <Button variant="ghost" size="sm" onClick={() => ssl.setDeleteTarget(null)} disabled={ssl.deleting}>Cancel</Button>
+            <Button variant="danger" size="sm" loading={ssl.deleting} onClick={ssl.submitDelete}>Delete</Button>
+          </div>
+        }
+      >
+        <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>
+          Delete certificate for{' '}
+          <strong style={{ color: 'var(--text)' }}>{ssl.deleteTarget}</strong>?
           HTTPS will stop working until a new certificate is issued.
         </p>
       </Modal>

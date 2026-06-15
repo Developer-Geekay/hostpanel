@@ -1,6 +1,6 @@
-import type { CertStatus } from '../types';
+import type { SslCert } from '../types';
 
-export function SslStatusBadge({ cert }: { cert: CertStatus }) {
+export function SslStatusBadge({ cert }: { cert: SslCert }) {
   switch (cert.status) {
     case 'none':
       return <span className="badge badge-dim">No cert</span>;
@@ -8,8 +8,6 @@ export function SslStatusBadge({ cert }: { cert: CertStatus }) {
       return <span className="badge" style={{ background: '#3b82f622', color: '#3b82f6', border: '1px solid #3b82f644' }}>Pending</span>;
     case 'failed':
       return <span className="badge badge-err">Failed</span>;
-    case 'revoked':
-      return <span className="badge badge-dim">Revoked</span>;
     case 'expired':
       return <span className="badge badge-err">Expired</span>;
     case 'expiring_soon':
