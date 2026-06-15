@@ -123,7 +123,6 @@ def _build_certonly_cmd(domains: list[str], cert_name: str, force: bool = False)
         "--manual", "--preferred-challenges", "dns",
         "--manual-auth-hook",    _AUTH_HOOK,
         "--manual-cleanup-hook", _CLEANUP_HOOK,
-        "--manual-public-ip-logging-ok",
         "--deploy-hook", _DEPLOY_HOOK,
         "--config-dir", CERTS_WORK_DIR,
         "--work-dir",   os.path.join(CERTS_WORK_DIR, "work"),

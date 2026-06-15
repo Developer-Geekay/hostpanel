@@ -36,7 +36,6 @@ def _common_args(cfg: dict) -> list[str]:
             f"python3 {hooks_dir}/pdns_auth.py {pdns_url} {pdns_key}",
         "--manual-cleanup-hook",
             f"python3 {hooks_dir}/pdns_cleanup.py {pdns_url} {pdns_key}",
-        "--manual-public-ip-logging-ok",
         "--deploy-hook", f"python3 {hooks_dir}/ssl_deploy.py",
         "--config-dir", certs_dir,
         "--work-dir",   os.path.join(certs_dir, "work"),
