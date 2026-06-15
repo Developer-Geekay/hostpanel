@@ -103,7 +103,7 @@ def _update_nginx_cpanel_vhost(root_domain: str, ssl_dir: str) -> None:
         proxy_read_timeout 86400;
     }}"""
 
-    vhost_config = f"""# Redirect HTTP to HTTPS
+    vhost_config = f"""# Redirect panel HTTP port → panel HTTPS port
 server {{
     listen {panel_port};
     server_name {cpanel_fqdn};
@@ -112,7 +112,7 @@ server {{
     }}
 }}
 
-# HTTPS — SSL termination, proxy to panel
+# Panel HTTPS — SSL termination, proxy to backend
 server {{
     listen {panel_ssl_port} ssl;
     server_name {cpanel_fqdn};
