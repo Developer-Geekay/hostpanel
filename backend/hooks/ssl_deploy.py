@@ -66,7 +66,78 @@ def main() -> None:
     if domains:
         set_in_cert_flags(cert["id"], domains)
 
+    _update_nginx_cpanel_vhost(root_domain, ssl_dir)
+
     print(f"ssl_deploy: cert for '{root_domain}' deployed to {ssl_dir}")
+
+
+def _update_nginx_cpanel_vhost(root_domain: str, ssl_dir: str) -> None:
+    """Write the HTTPS nginx vhost for cpanel.<domain> and reload nginx."""
+    vhosts_dir  = "/opt/hostpanel/plugins/nginx/vhosts"
+    nginx_bin   = "/opt/hostpanel/plugins/nginx/nginx"
+    nginx_conf  = "/opt/hostpanel/plugins/nginx/nginx.conf"
+    cpanel_fqdn = f"cpanel.{root_domain}"
+    vhost_path  = os.path.join(vhosts_dir, f"{cpanel_fqdn}.conf")
+
+    if not os.path.isdir(vhosts_dir):
+        return  # nginx plugin not installed
+
+    cert_path = os.path.join(ssl_dir, "fullchain.pem")
+    key_path  = os.path.join(ssl_dir, "privkey.pem")
+    if not os.path.exists(cert_path) or not os.path.exists(key_path):
+        return
+
+    panel_port         = int(os.environ.get("PANEL_PORT",         "2082"))
+    panel_ssl_port     = int(os.environ.get("PANEL_SSL_PORT",     "2083"))
+    panel_backend_port = int(os.environ.get("PANEL_BACKEND_PORT", "2081"))
+
+    proxy_block = f"""    location / {{
+        proxy_pass http://127.0.0.1:{panel_backend_port};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400;
+    }}"""
+
+    vhost_config = f"""# Redirect HTTP to HTTPS
+server {{
+    listen {panel_port};
+    server_name {cpanel_fqdn};
+    location / {{
+        return 301 https://$host:{panel_ssl_port}$request_uri;
+    }}
+}}
+
+# HTTPS — SSL termination, proxy to panel
+server {{
+    listen {panel_ssl_port} ssl;
+    server_name {cpanel_fqdn};
+
+    ssl_certificate     {cert_path};
+    ssl_certificate_key {key_path};
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+{proxy_block}
+}}
+"""
+
+    try:
+        with open(vhost_path, "w") as f:
+            f.write(vhost_config)
+        subprocess.run(
+            [nginx_bin, "-p", "/opt/hostpanel/plugins/nginx",
+             "-c", nginx_conf, "-s", "reload"],
+            capture_output=True, timeout=10,
+        )
+        print(f"ssl_deploy: nginx cpanel vhost updated to HTTPS on port {panel_ssl_port}")
+    except Exception as e:
+        print(f"ssl_deploy: could not update nginx cpanel vhost: {e}", file=sys.stderr)
 
 
 def _parse_expiry(cert_path: str) -> str | None:
