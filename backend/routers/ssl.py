@@ -226,12 +226,34 @@ async def issue_cert(body: IssueRequest, current_user: User = Depends(get_curren
 @router.get("/{root_domain}/available-domains")
 async def get_available_domains(root_domain: str,
                                 current_user: User = Depends(get_current_user)):
-    """Return all provisionable FQDNs for root_domain (root + subdomains)."""
-    record = _require_root_domain(root_domain, current_user)
-    subs = _load_subdomains()
-    fqdns = [root_domain] + [s["fqdn"] for s in subs
-                              if s.get("parent_domain") == root_domain]
-    return {"root_domain": root_domain, "fqdns": fqdns}
+    """
+    Return all FQDNs eligible for the cert — sourced from PowerDNS A records
+    in the zone.  No nginx dependency; works for any DNS setup.
+    """
+    _require_root_domain(root_domain, current_user)
+
+    fqdns: set[str] = {root_domain}
+
+    try:
+        import httpx
+        zone_name = root_domain.rstrip(".") + "."
+        resp = httpx.get(
+            f"{_PDNS_URL}/api/v1/servers/localhost/zones/{zone_name}",
+            headers={"X-API-Key": _PDNS_KEY},
+            timeout=5.0,
+        )
+        if resp.status_code == 200:
+            for rrset in resp.json().get("rrsets", []):
+                if rrset.get("type") not in ("A", "AAAA"):
+                    continue
+                name = rrset["name"].rstrip(".")
+                # Only include FQDNs that belong to this zone
+                if name == root_domain or name.endswith(f".{root_domain}"):
+                    fqdns.add(name)
+    except Exception:
+        pass  # fallback: return just the root domain
+
+    return {"root_domain": root_domain, "fqdns": [root_domain] + sorted(fqdns - {root_domain})}
 
 
 @router.get("/{root_domain}/log")
