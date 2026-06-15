@@ -243,11 +243,19 @@ async def get_available_domains(root_domain: str,
             timeout=5.0,
         )
         if resp.status_code == 200:
-            for rrset in resp.json().get("rrsets", []):
-                if rrset.get("type") not in ("A", "AAAA"):
+            rrsets = resp.json().get("rrsets", [])
+            # Collect nameserver hostnames to exclude their glue A records
+            ns_names = {
+                rec["content"].rstrip(".")
+                for rr in rrsets if rr.get("type") == "NS"
+                for rec in rr.get("records", [])
+            }
+            for rrset in rrsets:
+                if rrset.get("type") not in ("A", "CNAME"):
                     continue
                 name = rrset["name"].rstrip(".")
-                # Only include FQDNs that belong to this zone
+                if name in ns_names:
+                    continue
                 if name == root_domain or name.endswith(f".{root_domain}"):
                     fqdns.add(name)
     except Exception:
