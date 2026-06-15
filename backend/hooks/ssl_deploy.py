@@ -123,6 +123,8 @@ server {{
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
 {proxy_block}
 }}
 """
