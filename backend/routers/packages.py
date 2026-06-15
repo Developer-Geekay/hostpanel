@@ -316,7 +316,7 @@ async def install_package(request: PackageInstallRequest, background_tasks: Back
         tmp_dir = tempfile.mkdtemp(prefix="hpkg_")
         file_path = os.path.join(tmp_dir, filename)
         try:
-            urllib.request.urlretrieve(source, file_path)
+            await asyncio.to_thread(urllib.request.urlretrieve, source, file_path)
             logs = await installer.process_zip(file_path, filename)
             background_tasks.add_task(lifecycle.restart_server)
             pkg_name = filename.rsplit('-', 1)[0].lower() if filename.count('-') >= 2 else filename.split('.')[0]
