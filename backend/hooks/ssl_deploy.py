@@ -92,7 +92,13 @@ def _update_nginx_cpanel_vhost(root_domain: str, ssl_dir: str) -> None:
     panel_ssl_port     = int(os.environ.get("PANEL_SSL_PORT",     "2083"))
     panel_backend_port = int(os.environ.get("PANEL_BACKEND_PORT", "2081"))
 
-    proxy_block = f"""    location / {{
+    proxy_block = f"""    error_page 502 503 =200 /502.html;
+    location = /502.html {{
+        root /opt/hostpanel/frontend;
+        internal;
+    }}
+
+    location / {{
         proxy_pass http://127.0.0.1:{panel_backend_port};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

@@ -11,7 +11,7 @@ Environment=FRONTEND_DIR=/opt/hostpanel/frontend
 Environment=PANEL_BACKEND_PORT=2081
 ExecStart=/opt/hostpanel/backend/venv/bin/python main.py
 Restart=on-failure
-RestartSec=5
+RestartSec=1
 StandardOutput=journal
 StandardError=journal
 
