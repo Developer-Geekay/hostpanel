@@ -57,7 +57,7 @@ class SPAFiles(StaticFiles):
         try:
             response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
-            if exc.status_code == 404:
+            if exc.status_code == 404 and not path.startswith("packages/"):
                 response = await super().get_response("index.html", scope)
             else:
                 raise
