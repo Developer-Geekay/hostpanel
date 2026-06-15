@@ -1,220 +1,115 @@
 """
-Certbot subprocess interaction layer.
-All calls use shell=False and list-form args — never string interpolation into shell.
+Certbot subprocess interaction — DNS-01 via --manual + PowerDNS auth/cleanup hooks.
+All certbot calls use list-form args (never shell=True or string interpolation).
 """
 import logging
 import os
 import subprocess
-from typing import Optional
 
-from .exceptions import CertbotExecutionError, CertExpansionError
-from .validators import parse_certbot_domains
+from .exceptions import CertbotExecutionError
 
 logger = logging.getLogger(__name__)
 
-_CERTBOT_TIMEOUT = 300  # 5 min max for cert operations
+CERTS_WORK_DIR  = os.environ.get("CERTS_WORK_DIR", "/opt/hostpanel/certs")
+CERTBOT_LOG_DIR = os.path.join(CERTS_WORK_DIR, "logs")
+
+_HOOKS_DIR       = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "hooks")
+_CERTBOT_TIMEOUT = 300
 
 
-def _run_certbot(args: list[str], timeout: int = _CERTBOT_TIMEOUT) -> subprocess.CompletedProcess:
-    """Run certbot with the given args. Raises CertbotExecutionError on non-zero exit."""
+def _cfg_args(cfg: dict) -> tuple[str, str, str, str, str, str]:
+    """Extract commonly-used config values."""
+    certs_dir = cfg.get("CERTS_WORK_DIR", CERTS_WORK_DIR)
+    hooks_dir = cfg.get("HOOKS_DIR", _HOOKS_DIR)
+    pdns_url  = cfg.get("PDNS_URL",   "http://127.0.0.1:8053")
+    pdns_key  = cfg.get("PDNS_API_KEY", "hostpanel-dns-api-key")
+    email     = cfg.get("CERTBOT_EMAIL", "admin@hostpanel.local")
+    return certs_dir, hooks_dir, pdns_url, pdns_key, email
+
+
+def _common_args(cfg: dict) -> list[str]:
+    """Build the shared certbot flags used by every certonly/renew call."""
+    certs_dir, hooks_dir, pdns_url, pdns_key, email = _cfg_args(cfg)
+    return [
+        "--manual", "--preferred-challenges", "dns",
+        "--manual-auth-hook",
+            f"python3 {hooks_dir}/pdns_auth.py {pdns_url} {pdns_key}",
+        "--manual-cleanup-hook",
+            f"python3 {hooks_dir}/pdns_cleanup.py {pdns_url} {pdns_key}",
+        "--deploy-hook", f"python3 {hooks_dir}/ssl_deploy.py",
+        "--config-dir", certs_dir,
+        "--work-dir",   os.path.join(certs_dir, "work"),
+        "--logs-dir",   os.path.join(certs_dir, "logs"),
+        "--non-interactive", "--agree-tos", "--email", email,
+    ]
+
+
+def _run(args: list[str], timeout: int = _CERTBOT_TIMEOUT) -> subprocess.CompletedProcess:
     cmd = ["certbot"] + args
-    logger.debug(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        shell=False,
-    )
+    logger.debug("Running: %s", " ".join(cmd))
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, shell=False)
     if result.returncode != 0:
         output = (result.stdout + "\n" + result.stderr).strip()
-        raise CertbotExecutionError(
-            f"certbot exited with code {result.returncode}:\n{output}"
-        )
+        raise CertbotExecutionError(f"certbot exited {result.returncode}:\n{output}")
     return result
 
 
-def get_existing_domains(root_domain: str) -> list[str]:
-    """
-    Parse `certbot certificates --cert-name <root_domain>` output.
-    Returns current SAN list, or empty list if cert doesn't exist.
-    """
-    return parse_certbot_domains(root_domain)
-
-
-def issue_new_cert(
-    domains: list[str],
-    credentials_file: str,
-    email: str,
-    dry_run: bool = False,
-) -> None:
-    """
-    Issue a new cert via certbot certonly --dns-rfc2136 for all given domains.
-    domains[0] should be the primary/root domain.
-    Raises CertbotExecutionError on failure.
-    """
+def issue_cert(domains: list[str], cfg: dict) -> None:
+    """Issue a new DNS-01 cert. domains[0] becomes the cert-name."""
     if not domains:
-        raise CertbotExecutionError("At least one domain is required to issue a cert.")
-
-    # Sanitise: strip any leading/trailing whitespace or dots from each domain
+        raise CertbotExecutionError("At least one domain is required.")
     clean = [d.strip().strip(".") for d in domains if d.strip()]
-    if not clean:
-        raise CertbotExecutionError("Domain list is empty after sanitisation.")
-
-    args = [
-        "certonly",
-        "--dns-rfc2136",
-        "--dns-rfc2136-credentials", credentials_file,
-        "--non-interactive",
-        "--agree-tos",
-        "--email", email,
-        "--cert-name", clean[0],
-    ]
-    for domain in clean:
-        args += ["-d", domain]
-
-    if dry_run:
-        args.append("--dry-run")
-
-    logger.info(f"Issuing new cert for: {', '.join(clean)}")
-    _run_certbot(args)
-    logger.info(f"Cert issued successfully for {clean[0]}")
+    args = ["certonly"] + _common_args(cfg) + ["--cert-name", clean[0]]
+    for d in clean:
+        args += ["-d", d]
+    logger.info("Issuing cert for: %s", ", ".join(clean))
+    _run(args)
 
 
-def expand_existing_cert(
-    root_domain: str,
-    new_domain: str,
-    credentials_file: str,
-    email: str,
-    dry_run: bool = False,
-) -> list[str]:
-    """
-    Expand an existing cert to include new_domain.
-    1. Fetch current SAN list.
-    2. Return early if new_domain already covered (idempotent).
-    3. Append new_domain and re-run certbot with --expand.
-    Returns the updated SAN list.
-    Raises CertExpansionError on failure.
-    """
-    current_sans = get_existing_domains(root_domain)
-    if not current_sans:
-        raise CertExpansionError(
-            f"No existing cert found for '{root_domain}'. "
-            "Use issue_new_cert() instead."
-        )
-
-    if new_domain in current_sans:
-        logger.info(f"'{new_domain}' already in cert SANs for {root_domain} — skipping expand.")
-        return current_sans
-
-    updated_sans = current_sans + [new_domain]
-
-    args = [
-        "certonly",
-        "--dns-rfc2136",
-        "--dns-rfc2136-credentials", credentials_file,
-        "--non-interactive",
-        "--agree-tos",
-        "--email", email,
-        "--cert-name", root_domain,
-        "--expand",
-    ]
-    for domain in updated_sans:
-        args += ["-d", domain]
-
-    if dry_run:
-        args.append("--dry-run")
-
-    logger.info(f"Expanding cert for {root_domain}: adding '{new_domain}'")
-    try:
-        _run_certbot(args)
-    except CertbotExecutionError as e:
-        raise CertExpansionError(f"Failed to expand cert for '{root_domain}': {e}") from e
-
-    logger.info(f"Cert expanded — new SAN list: {updated_sans}")
-    return updated_sans
+def reissue_cert(root_domain: str, domains: list[str], cfg: dict) -> None:
+    """Force-reissue cert with an updated domain list (expand, shrink, or unchanged)."""
+    if not domains:
+        raise CertbotExecutionError("Domain list cannot be empty for reissue.")
+    clean = [d.strip().strip(".") for d in domains if d.strip()]
+    args = (
+        ["certonly"] + _common_args(cfg)
+        + ["--cert-name", root_domain, "--force-renewal"]
+    )
+    for d in clean:
+        args += ["-d", d]
+    logger.info("Reissuing cert for %s with SANs: %s", root_domain, ", ".join(clean))
+    _run(args)
 
 
-def renew_cert(root_domain: str, force: bool = False) -> None:
-    """
-    Renew cert for root_domain via `certbot renew --cert-name`.
-    Pass force=True to renew even if not yet due.
-    Raises CertbotExecutionError on failure.
-    """
-    args = ["renew", "--cert-name", root_domain, "--non-interactive"]
+def renew_cert(root_domain: str, cfg: dict, force: bool = False) -> None:
+    """Renew an existing cert (used by the auto-renew timer or manual force-renew)."""
+    certs_dir = cfg.get("CERTS_WORK_DIR", CERTS_WORK_DIR)
+    args = ["renew", "--cert-name", root_domain, "--non-interactive",
+            "--config-dir", certs_dir]
     if force:
         args.append("--force-renewal")
-
-    logger.info(f"Renewing cert for {root_domain} (force={force})")
-    _run_certbot(args)
-    logger.info(f"Cert renewed for {root_domain}")
+    logger.info("Renewing cert for %s (force=%s)", root_domain, force)
+    _run(args)
 
 
-def revoke_and_delete_cert(root_domain: str, reason: str = "unspecified") -> None:
-    """
-    Revoke and delete a Let's Encrypt cert.
-    Raises CertbotExecutionError on failure.
-    """
-    args = [
-        "delete",
-        "--cert-name", root_domain,
-        "--non-interactive",
-    ]
-    logger.info(f"Deleting cert for {root_domain}")
-    _run_certbot(args)
-    logger.info(f"Cert deleted for {root_domain}")
+def delete_cert(root_domain: str, cfg: dict) -> None:
+    """Delete certbot's internal cert lineage (does not touch our /home/ ssl copy)."""
+    certs_dir = cfg.get("CERTS_WORK_DIR", CERTS_WORK_DIR)
+    args = ["delete", "--cert-name", root_domain, "--non-interactive",
+            "--config-dir", certs_dir]
+    logger.info("Deleting certbot lineage for %s", root_domain)
+    _run(args)
 
 
-def spawn_certbot_background(cmd: list[str], domain: str, log_dir: str) -> None:
+def spawn_background(cmd: list[str], domain: str) -> None:
     """
     Write log header and spawn certbot as a background Popen (non-blocking).
-    Used by the API issue/renew endpoints so the HTTP request returns immediately.
-    The frontend polls GET /{domain}/log to track progress.
+    Frontend polls GET /{root_domain}/log to track progress.
     """
-    os.makedirs(log_dir, exist_ok=True)
-    log_path = os.path.join(log_dir, f"{domain}.log")
-    with open(log_path, "w") as log_fd:
-        log_fd.write(f"$ {' '.join(cmd)}\n\n")
-        log_fd.flush()
-        subprocess.Popen(cmd, stdout=log_fd, stderr=subprocess.STDOUT)
-    logger.info(f"certbot spawned in background for {domain}, log: {log_path}")
-
-
-def shrink_cert_sans(
-    root_domain: str,
-    remove_domain: str,
-    credentials_file: str,
-    email: str,
-) -> list[str]:
-    """
-    Re-issue cert with remove_domain excluded from the SAN list.
-    Returns the reduced SAN list, or current list if remove_domain wasn't present.
-    """
-    current_sans = get_existing_domains(root_domain)
-    if remove_domain not in current_sans:
-        logger.info(f"'{remove_domain}' not in SANs for {root_domain} — nothing to shrink.")
-        return current_sans
-
-    reduced = [d for d in current_sans if d != remove_domain]
-    if not reduced:
-        raise CertbotExecutionError(
-            f"Cannot shrink cert — removing '{remove_domain}' would leave no domains."
-        )
-
-    args = [
-        "certonly",
-        "--dns-rfc2136",
-        "--dns-rfc2136-credentials", credentials_file,
-        "--non-interactive",
-        "--agree-tos",
-        "--email", email,
-        "--cert-name", root_domain,
-        "--expand",  # certbot requires --expand when changing the SAN list
-    ]
-    for domain in reduced:
-        args += ["-d", domain]
-
-    logger.info(f"Shrinking cert for {root_domain}: removing '{remove_domain}'")
-    _run_certbot(args)
-    logger.info(f"Cert shrunk — remaining SANs: {reduced}")
-    return reduced
+    os.makedirs(CERTBOT_LOG_DIR, exist_ok=True)
+    log_path = os.path.join(CERTBOT_LOG_DIR, f"{domain}.log")
+    with open(log_path, "w") as lf:
+        lf.write(f"$ {' '.join(cmd)}\n\n")
+        lf.flush()
+        subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT)
+    logger.info("certbot spawned in background for %s, log: %s", domain, log_path)

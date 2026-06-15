@@ -15,12 +15,8 @@ import urllib.request
 
 pdns_url = sys.argv[1].rstrip("/")
 api_key  = sys.argv[2]
-domain   = os.environ["CERTBOT_DOMAIN"]
+domain   = os.environ["CERTBOT_DOMAIN"].rstrip(".")
 value    = os.environ["CERTBOT_VALIDATION"]
-
-# PowerDNS zone and record names must end with a dot
-zone_name   = domain.rstrip(".") + "."
-record_name = f"_acme-challenge.{zone_name}"
 
 headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
 
@@ -38,6 +34,27 @@ def pdns(method: str, path: str, body=None):
         sys.exit(1)
 
 
+def find_zone(fqdn: str) -> str:
+    """Walk up domain labels to find the PowerDNS zone that owns this FQDN."""
+    parts = fqdn.split(".")
+    for i in range(len(parts) - 1):
+        candidate = ".".join(parts[i:]) + "."
+        req = urllib.request.Request(
+            f"{pdns_url}/api/v1/servers/localhost/zones/{candidate}",
+            headers=headers, method="GET"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                if r.status == 200:
+                    return candidate
+        except urllib.request.HTTPError:
+            continue
+    return parts[-2] + "." + parts[-1] + "."
+
+
+zone_name   = find_zone(domain)
+record_name = f"_acme-challenge.{domain}."
+
 pdns("PATCH", f"/zones/{zone_name}", {
     "rrsets": [{
         "name":       record_name,
@@ -48,6 +65,6 @@ pdns("PATCH", f"/zones/{zone_name}", {
     }]
 })
 
-print(f"Created TXT {record_name} = {value}")
+print(f"Created TXT {record_name} in zone {zone_name} = {value}")
 # Brief wait for PowerDNS to publish — local so propagation is near-instant
 time.sleep(3)

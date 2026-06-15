@@ -78,6 +78,30 @@ CREATE TABLE IF NOT EXISTS ssh_keys (
     added_at    TEXT NOT NULL DEFAULT (date('now')),
     UNIQUE(linux_user, fingerprint)
 );
+
+CREATE TABLE IF NOT EXISTS ssl_certs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    root_domain TEXT    NOT NULL UNIQUE,
+    linux_user  TEXT    NOT NULL,
+    cert_path   TEXT,
+    status      TEXT    NOT NULL DEFAULT 'none',
+    issued_at   TEXT,
+    expires_at  TEXT,
+    updated_at  TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ssl_cert_domains (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    cert_id    INTEGER NOT NULL REFERENCES ssl_certs(id) ON DELETE CASCADE,
+    domain     TEXT    NOT NULL,
+    is_primary INTEGER NOT NULL DEFAULT 0,
+    in_cert    INTEGER NOT NULL DEFAULT 0,
+    added_at   TEXT    NOT NULL,
+    UNIQUE (cert_id, domain)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ssl_certs_domain   ON ssl_certs(root_domain);
+CREATE INDEX IF NOT EXISTS idx_ssl_cert_domains_c ON ssl_cert_domains(cert_id);
 """
 
 

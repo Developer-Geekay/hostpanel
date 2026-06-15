@@ -1,45 +1,40 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiGet, apiPost, apiPut, apiDelete } from '../../../lib/api';
 import { useToast } from '../../../components/ui/Toast';
-import type { CertStatus, CertLog, IssueRequest, ImportRequest } from '../types';
+import type { SslCert, CertLog } from '../types';
 
 export function useSsl() {
   const toast = useToast();
 
   // ── Core data ──────────────────────────────────────────────────────────────
-  const [certs, setCerts]         = useState<CertStatus[]>([]);
+  const [certs, setCerts]         = useState<SslCert[]>([]);
   const [loading, setLoading]     = useState(true);
   const [autoRenew, setAutoRenew] = useState(false);
 
-  // ── Issue / Renew modal ────────────────────────────────────────────────────
-  const [modalOpen, setModalOpen]     = useState(false);
-  const [modalMode, setModalMode]     = useState<'issue' | 'renew'>('issue');
-  const [issueDomain, setIssueDomain] = useState('');
-  const [useWildcard, setUseWildcard] = useState(false);
-  const [submitting, setSubmitting]   = useState(false);
-  const [certLog, setCertLog]         = useState<CertLog | null>(null);
-  const logPollRef                    = useRef<ReturnType<typeof setInterval> | null>(null);
-  const logBoxRef                     = useRef<HTMLPreElement>(null);
+  // ── Cert domain modal (issue / edit domains) ───────────────────────────────
+  const [certModalOpen, setCertModalOpen]   = useState(false);
+  const [certModalMode, setCertModalMode]   = useState<'issue' | 'edit'>('issue');
+  const [certModalRoot, setCertModalRoot]   = useState('');
+  const [certModalIsNew, setCertModalIsNew] = useState(true);  // true = POST /issue, false = PUT /domains
+  const [availableFqdns, setAvailableFqdns] = useState<string[]>([]);
+  const [selectedFqdns, setSelectedFqdns]   = useState<string[]>([]);
+  const [loadingFqdns, setLoadingFqdns]     = useState(false);
+  const [submitting, setSubmitting]         = useState(false);
+  const [certLog, setCertLog]               = useState<CertLog | null>(null);
+  const logBoxRef                           = useRef<HTMLPreElement>(null);
+  const logPollRef                          = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── Delete ─────────────────────────────────────────────────────────────────
-  const [deleteTarget, setDeleteTarget] = useState('');
+  // ── Renew / Delete ─────────────────────────────────────────────────────────
+  const [renewTarget, setRenewTarget]   = useState<string | null>(null);
+  const [renewing, setRenewing]         = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting]         = useState(false);
-
-  // ── Force HTTPS ────────────────────────────────────────────────────────────
-  const [togglingHttps, setTogglingHttps] = useState<string | null>(null);
-
-  // ── Import modal ───────────────────────────────────────────────────────────
-  const [importDomain, setImportDomain] = useState('');
-  const [importCert, setImportCert]     = useState('');
-  const [importKey, setImportKey]       = useState('');
-  const [importChain, setImportChain]   = useState('');
-  const [importing, setImporting]       = useState(false);
 
   // ── Load ───────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     try {
       const [certsData, renewalData] = await Promise.all([
-        apiGet<CertStatus[]>('ssl'),
+        apiGet<SslCert[]>('ssl'),
         apiGet<{ enabled: boolean }>('ssl/renewal'),
       ]);
       setCerts(certsData);
@@ -53,7 +48,7 @@ export function useSsl() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-poll table every 5s while any cert is pending
+  // Auto-poll every 5s while any cert is pending
   useEffect(() => {
     if (!certs.some(c => c.status === 'pending')) return;
     const t = setInterval(load, 5000);
@@ -65,100 +60,134 @@ export function useSsl() {
     if (logPollRef.current) { clearInterval(logPollRef.current); logPollRef.current = null; }
   }
 
-  function startLogPolling(domain: string) {
+  function startLogPolling(rootDomain: string) {
     stopLogPolling();
     const poll = async () => {
       try {
-        const data = await apiGet<CertLog>(`ssl/${domain}/log`);
+        const data = await apiGet<CertLog>(`ssl/${rootDomain}/log`);
         setCertLog(data);
-        if (logBoxRef.current) logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
+        if (logBoxRef.current)
+          logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
         if (data.status === 'success') { stopLogPolling(); load(); }
         else if (data.status === 'error') { stopLogPolling(); }
-      } catch { /* keep polling on transient network errors */ }
+      } catch { /* keep polling on transient errors */ }
     };
     poll();
     logPollRef.current = setInterval(poll, 2000);
   }
 
-  // ── Issue / Renew modal actions ────────────────────────────────────────────
-  function openIssue(domain = '') {
-    setCertLog(null); setIssueDomain(domain); setUseWildcard(false);
-    setModalMode('issue'); setModalOpen(true);
+  // ── Fetch available FQDNs ──────────────────────────────────────────────────
+  async function fetchAvailableFqdns(rootDomain: string): Promise<string[]> {
+    try {
+      const data = await apiGet<{ root_domain: string; fqdns: string[] }>(
+        `ssl/${rootDomain}/available-domains`
+      );
+      return data.fqdns;
+    } catch {
+      return [rootDomain];
+    }
   }
 
-  function openRenew(domain: string) {
-    setCertLog(null); setIssueDomain(domain); setUseWildcard(false);
-    setModalMode('renew'); setModalOpen(true);
+  // ── Issue modal (no existing DB record) ───────────────────────────────────
+  async function openIssue(rootDomain: string) {
+    setCertModalRoot(rootDomain);
+    setCertModalMode('issue');
+    setCertModalIsNew(true);
+    setCertLog(null);
+    setLoadingFqdns(true);
+    setCertModalOpen(true);
+
+    const fqdns = await fetchAvailableFqdns(rootDomain);
+    setAvailableFqdns(fqdns);
+    setSelectedFqdns([...fqdns]); // pre-check all
+    setLoadingFqdns(false);
   }
 
-  function closeModal() {
+  // ── Edit domains modal (existing cert, any status) ─────────────────────────
+  async function openEdit(cert: SslCert) {
+    setCertModalRoot(cert.root_domain);
+    setCertModalMode('edit');
+    setCertModalIsNew(false);
+    setCertLog(null);
+    setLoadingFqdns(true);
+    setCertModalOpen(true);
+
+    const fqdns = await fetchAvailableFqdns(cert.root_domain);
+    setAvailableFqdns(fqdns);
+    // Pre-check currently in-cert domains; untracked ones default to checked
+    const inCert = new Set(cert.domains.filter(d => d.in_cert).map(d => d.domain));
+    setSelectedFqdns(fqdns.filter(f => inCert.size === 0 || inCert.has(f)));
+    setLoadingFqdns(false);
+  }
+
+  function closeCertModal() {
     stopLogPolling();
-    setModalOpen(false);
-    setIssueDomain('');
-    setUseWildcard(false);
+    setCertModalOpen(false);
+    setAvailableFqdns([]);
+    setSelectedFqdns([]);
     setCertLog(null);
   }
 
-  async function submitIssue() {
-    if (!issueDomain.trim()) return;
+  function toggleFqdn(fqdn: string) {
+    setSelectedFqdns(prev =>
+      prev.includes(fqdn) ? prev.filter(f => f !== fqdn) : [...prev, fqdn]
+    );
+  }
+
+  function selectAllFqdns() { setSelectedFqdns([...availableFqdns]); }
+  function deselectAllFqdns() { setSelectedFqdns([]); }
+
+  async function submitCertModal() {
+    if (!selectedFqdns.length) return;
     setSubmitting(true);
     try {
-      const req: IssueRequest = { domain: issueDomain.trim(), wildcard: useWildcard };
-      await apiPost('ssl/issue', req);
+      if (certModalIsNew) {
+        await apiPost('ssl/issue', { root_domain: certModalRoot, domains: selectedFqdns });
+      } else {
+        await apiPut(`ssl/${certModalRoot}/domains`, { domains: selectedFqdns });
+      }
       setCertLog({ log: 'Certbot started — waiting for output…', status: 'running' });
-      startLogPolling(issueDomain.trim());
+      startLogPolling(certModalRoot);
     } catch (err: unknown) {
-      toast.err(err instanceof Error ? err.message : 'Failed to issue certificate');
+      toast.err(err instanceof Error ? err.message : 'Failed to start certbot');
     } finally {
       setSubmitting(false);
     }
   }
 
+  // ── Renew ──────────────────────────────────────────────────────────────────
   async function submitRenew() {
-    setSubmitting(true);
+    if (!renewTarget) return;
+    setRenewing(true);
     try {
-      await apiPost(`ssl/${issueDomain}/renew`, {});
-      setCertLog({ log: 'Certbot renew started — waiting for output…', status: 'running' });
-      startLogPolling(issueDomain);
+      await apiPost(`ssl/${renewTarget}/renew`, {});
+      toast.ok(`Renew started for ${renewTarget}`);
+      setRenewTarget(null);
+      load();
     } catch (err: unknown) {
       toast.err(err instanceof Error ? err.message : 'Failed to renew certificate');
     } finally {
-      setSubmitting(false);
+      setRenewing(false);
     }
   }
 
   // ── Delete ─────────────────────────────────────────────────────────────────
-  async function revokeCert() {
+  async function submitDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
       await apiDelete(`ssl/${deleteTarget}`);
-      toast.ok(`Certificate for ${deleteTarget} revoked`);
-      setDeleteTarget('');
+      toast.ok(`Certificate for ${deleteTarget} deleted`);
+      setDeleteTarget(null);
       load();
     } catch (err: unknown) {
-      toast.err(err instanceof Error ? err.message : 'Failed to revoke certificate');
+      toast.err(err instanceof Error ? err.message : 'Failed to delete certificate');
     } finally {
       setDeleting(false);
     }
   }
 
-  // ── Force HTTPS ────────────────────────────────────────────────────────────
-  async function toggleForceHttps(cert: CertStatus) {
-    setTogglingHttps(cert.domain);
-    try {
-      await apiPut(`ssl/${cert.domain}/force-https`, { enabled: !cert.https_forced });
-      setCerts(cs => cs.map(c =>
-        c.domain === cert.domain ? { ...c, https_forced: !c.https_forced } : c
-      ));
-    } catch (err: unknown) {
-      toast.err(err instanceof Error ? err.message : 'Failed to update Force HTTPS');
-    } finally {
-      setTogglingHttps(null);
-    }
-  }
-
-  // ── Auto-renew ─────────────────────────────────────────────────────────────
+  // ── Auto-renew timer ───────────────────────────────────────────────────────
   async function toggleAutoRenew() {
     try {
       await apiPut('ssl/renewal', { enabled: !autoRenew });
@@ -169,53 +198,20 @@ export function useSsl() {
     }
   }
 
-  // ── Import ─────────────────────────────────────────────────────────────────
-  function openImport(domain: string) {
-    setImportDomain(domain); setImportCert(''); setImportKey(''); setImportChain('');
-  }
-
-  function closeImport() {
-    setImportDomain(''); setImportCert(''); setImportKey(''); setImportChain('');
-  }
-
-  async function submitImport() {
-    setImporting(true);
-    try {
-      const req: ImportRequest = {
-        cert_pem: importCert.trim(),
-        key_pem: importKey.trim(),
-        chain_pem: importChain.trim(),
-      };
-      await apiPost(`ssl/${importDomain}/import`, req);
-      toast.ok(`Certificate for ${importDomain} imported`);
-      closeImport();
-      load();
-    } catch (err: unknown) {
-      toast.err(err instanceof Error ? err.message : 'Failed to import certificate');
-    } finally {
-      setImporting(false);
-    }
-  }
-
   return {
     // data
     certs, loading, autoRenew,
-    // issue/renew modal
-    modalOpen, modalMode, issueDomain, setIssueDomain,
-    useWildcard, setUseWildcard,
+    // cert domain modal
+    certModalOpen, certModalMode, certModalRoot,
+    availableFqdns, selectedFqdns, loadingFqdns,
     submitting, certLog, logBoxRef,
-    openIssue, openRenew, closeModal, submitIssue, submitRenew,
+    openIssue, openEdit, closeCertModal,
+    toggleFqdn, selectAllFqdns, deselectAllFqdns, submitCertModal,
+    // renew
+    renewTarget, setRenewTarget, renewing, submitRenew,
     // delete
-    deleteTarget, setDeleteTarget, deleting, revokeCert,
-    // force https
-    togglingHttps, toggleForceHttps,
+    deleteTarget, setDeleteTarget, deleting, submitDelete,
     // auto-renew
     toggleAutoRenew,
-    // import
-    importDomain, importCert, setImportCert,
-    importKey, setImportKey,
-    importChain, setImportChain,
-    importing,
-    openImport, closeImport, submitImport,
   };
 }
