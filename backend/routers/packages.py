@@ -113,7 +113,8 @@ def _github_repo_from_url(url: str):
         from urllib.parse import urlparse
         parts = urlparse(url).path.lstrip("/").split("/")
         if urlparse(url).netloc == "github.com" and len(parts) >= 2:
-            return parts[0], parts[1]
+            repo = parts[1].removesuffix(".git")
+            return parts[0], repo
     except Exception:
         pass
     return None, None
