@@ -67,6 +67,7 @@ def main() -> None:
         set_in_cert_flags(cert["id"], domains)
 
     _update_nginx_cpanel_vhost(root_domain, ssl_dir)
+    _update_nginx_main_vhost(root_domain, linux_user, ssl_dir)
 
     print(f"ssl_deploy: cert for '{root_domain}' deployed to {ssl_dir}")
 
@@ -140,6 +141,77 @@ server {{
         print(f"ssl_deploy: nginx cpanel vhost updated to HTTPS on port {panel_ssl_port}")
     except Exception as e:
         print(f"ssl_deploy: could not update nginx cpanel vhost: {e}", file=sys.stderr)
+
+
+def _update_nginx_main_vhost(root_domain: str, linux_user: str, ssl_dir: str) -> None:
+    """Write the HTTPS nginx vhost for the main domain (port 80→443) and reload nginx."""
+    vhosts_dir = "/opt/hostpanel/plugins/nginx/vhosts"
+    nginx_bin  = "/opt/hostpanel/plugins/nginx/nginx"
+    nginx_conf = "/opt/hostpanel/plugins/nginx/nginx.conf"
+    log_dir    = "/opt/hostpanel/plugins/nginx/logs"
+    vhost_path = os.path.join(vhosts_dir, f"{root_domain}.conf")
+
+    if not os.path.isdir(vhosts_dir):
+        return
+
+    cert_path = os.path.join(ssl_dir, "fullchain.pem")
+    key_path  = os.path.join(ssl_dir, "privkey.pem")
+    if not os.path.exists(cert_path) or not os.path.exists(key_path):
+        return
+
+    doc_root = f"/home/{linux_user}/public_html"
+
+    vhost_config = f"""# Redirect HTTP → HTTPS
+server {{
+    listen 80;
+    server_name {root_domain} www.{root_domain};
+
+    location ^~ /.well-known/acme-challenge/ {{
+        root {doc_root};
+        default_type "text/plain";
+        try_files $uri =404;
+    }}
+
+    location / {{
+        return 301 https://$host$request_uri;
+    }}
+}}
+
+# HTTPS
+server {{
+    listen 443 ssl;
+    server_name {root_domain} www.{root_domain};
+    root {doc_root};
+    index index.php index.html index.htm;
+
+    ssl_certificate     {cert_path};
+    ssl_certificate_key {key_path};
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    access_log {log_dir}/{root_domain}.access.log;
+    error_log  {log_dir}/{root_domain}.error.log;
+
+    location / {{
+        try_files $uri $uri/ /index.html;
+    }}
+}}
+"""
+
+    try:
+        with open(vhost_path, "w") as f:
+            f.write(vhost_config)
+        subprocess.run(
+            [nginx_bin, "-p", "/opt/hostpanel/plugins/nginx",
+             "-c", nginx_conf, "-s", "reload"],
+            capture_output=True, timeout=10,
+        )
+        print(f"ssl_deploy: nginx main vhost updated to HTTPS (443) for {root_domain}")
+    except Exception as e:
+        print(f"ssl_deploy: could not update nginx main vhost: {e}", file=sys.stderr)
 
 
 def _parse_expiry(cert_path: str) -> str | None:
