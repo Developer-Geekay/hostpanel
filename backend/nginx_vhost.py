@@ -19,8 +19,13 @@ def render_domain_vhost(domain: str, linux_user: str, cert_path: str = "", key_p
     return _static(domain, doc_root, cert_path, key_path)
 
 
+_LEGACY_MARKERS = ("# Managed by hostpanel-nodejs", "# Restored by hostpanel-nodejs")
+
+
 def is_hostpanel_vhost(content: str) -> bool:
-    return MARKER in content
+    if MARKER in content:
+        return True
+    return any(m in content for m in _LEGACY_MARKERS)
 
 
 # ── internal helpers ──────────────────────────────────────────────────────────

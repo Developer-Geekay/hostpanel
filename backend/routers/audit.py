@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from typing import List, Optional
 
+from auth import User
 from deps import require_admin
 from modules.audit import queries as audit_q
+from modules.audit.logger import log_action
 
 router = APIRouter(prefix="/cpanelapi/audit", tags=["Audit"])
 
@@ -33,6 +35,7 @@ async def audit_count(_=Depends(require_admin)):
 
 
 @router.delete("")
-async def clear_audit_log(_=Depends(require_admin)):
+async def clear_audit_log(current_user: User = Depends(require_admin)):
     audit_q.clear_entries()
+    log_action(current_user.username, "audit.clear")
     return {"message": "Audit log cleared"}

@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
 from pydantic import BaseModel
 
+from auth import User
 from deps import require_admin
 from modules.audit.logger import log_action
 from modules.packages import installer, lifecycle
@@ -126,11 +127,12 @@ async def list_installed_packages():
 
 
 @router.post("/registry")
-async def upsert_package_registry(request: PackageRegistryRequest, _=Depends(require_admin)):
+async def upsert_package_registry(request: PackageRegistryRequest, current_user: User = Depends(require_admin)):
     allowed = {"github_zip", "pypi", "upload"}
     if request.source_type not in allowed:
         raise HTTPException(status_code=400, detail=f"source_type must be one of {allowed}")
     save_registry_entry(request.package_name, request.source, request.source_type)
+    log_action(current_user.username, "package.registry_update", request.package_name, f"source_type={request.source_type}")
     return {"status": "success", "package_name": request.package_name}
 
 
@@ -221,7 +223,7 @@ async def check_package_update(package_name: str, _=Depends(require_admin)):
 
 
 @router.post("/update")
-async def update_package(request: PackageUpdateRequest, background_tasks: BackgroundTasks, _=Depends(require_admin)):
+async def update_package(request: PackageUpdateRequest, background_tasks: BackgroundTasks, current_user: User = Depends(require_admin)):
     source = request.source.strip()
     if source.lower().endswith(".zip"):
         from urllib.parse import urlparse as _up
@@ -236,10 +238,12 @@ async def update_package(request: PackageUpdateRequest, background_tasks: Backgr
             entry = load_registry().get(request.package_name, {})
             save_registry_entry(request.package_name, source, entry.get("source_type", "github_zip"), is_update=True)
             background_tasks.add_task(lifecycle.restart_server)
+            log_action(current_user.username, "package.update", request.package_name, f"source={filename}")
             return {"status": "success", "message": f"Updated {filename}. Server will restart shortly.", "logs": "\n".join(logs)}
         except HTTPException:
             raise
         except Exception as e:
+            log_action(current_user.username, "package.update", request.package_name, str(e), status="error")
             raise HTTPException(status_code=500, detail=f"Update failed: {e}")
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -256,13 +260,15 @@ async def update_package(request: PackageUpdateRequest, background_tasks: Backgr
         installer.deploy_frontend_from_dist(request.package_name, pkg_slug, fe_logs)
         save_registry_entry(request.package_name, source, detect_source_type(source), is_update=True)
         background_tasks.add_task(lifecycle.restart_server)
+        log_action(current_user.username, "package.update", request.package_name, f"source={source}")
         return {"status": "success", "message": f"Updated {source}. Server will restart shortly.", "logs": logs + "\n" + "\n".join(fe_logs)}
     except subprocess.CalledProcessError as e:
+        log_action(current_user.username, "package.update", request.package_name, e.stderr, status="error")
         raise HTTPException(status_code=500, detail=f"Update failed: {e.stderr}")
 
 
 @router.post("/update/upload")
-async def update_package_upload(background_tasks: BackgroundTasks, _=Depends(require_admin),
+async def update_package_upload(background_tasks: BackgroundTasks, current_user: User = Depends(require_admin),
                                  package_name: str = "", file: UploadFile = File(...)):
     if not file.filename.endswith(".zip") and not file.filename.endswith(".tar.gz"):
         raise HTTPException(status_code=400, detail="Only .zip or .tar.gz files are allowed.")
@@ -299,6 +305,7 @@ async def update_package_upload(background_tasks: BackgroundTasks, _=Depends(req
         pkg_slug = package_name.split("-")[1] if package_name.count("-") >= 1 else package_name
         save_registry_entry(package_name, _manifest_repo(pkg_slug), "github_zip" if _manifest_repo(pkg_slug) else "upload", is_update=True)
         background_tasks.add_task(lifecycle.restart_server)
+        log_action(current_user.username, "package.update", package_name, f"{pre_version} → {new_version}")
         return {"status": "success", "previous_version": pre_version, "new_version": new_version,
                 "is_upgrade": is_upgrade, "message": f"Updated {safe_filename}. Server will restart shortly.",
                 "logs": "\n".join(logs)}
@@ -309,7 +316,7 @@ async def update_package_upload(background_tasks: BackgroundTasks, _=Depends(req
 
 
 @router.post("/install")
-async def install_package(request: PackageInstallRequest, background_tasks: BackgroundTasks):
+async def install_package(request: PackageInstallRequest, background_tasks: BackgroundTasks, current_user: User = Depends(require_admin)):
     source = request.package_source.strip()
     if source.lower().endswith(".zip"):
         filename = source.rstrip("/").split("/")[-1]
@@ -321,10 +328,12 @@ async def install_package(request: PackageInstallRequest, background_tasks: Back
             background_tasks.add_task(lifecycle.restart_server)
             pkg_name = filename.rsplit('-', 1)[0].lower() if filename.count('-') >= 2 else filename.split('.')[0]
             save_registry_entry(pkg_name, source, "github_zip")
+            log_action(current_user.username, "package.install", pkg_name, f"source={filename}")
             return {"status": "success", "message": f"Successfully installed {filename}. Server will restart shortly.", "logs": "\n".join(logs)}
         except HTTPException:
             raise
         except Exception as e:
+            log_action(current_user.username, "package.install", source, str(e), status="error")
             raise HTTPException(status_code=500, detail=f"Installation failed: {e}")
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -337,13 +346,15 @@ async def install_package(request: PackageInstallRequest, background_tasks: Back
         installer.deploy_frontend_from_dist(pkg_name, pkg_slug, fe_logs)
         save_registry_entry(pkg_name, source, detect_source_type(source))
         background_tasks.add_task(lifecycle.restart_server)
+        log_action(current_user.username, "package.install", pkg_name, f"source={source}")
         return {"status": "success", "message": f"Successfully installed {source}. Server will restart shortly.", "logs": logs + "\n" + "\n".join(fe_logs)}
     except subprocess.CalledProcessError as e:
+        log_action(current_user.username, "package.install", source, e.stderr, status="error")
         raise HTTPException(status_code=500, detail=f"Installation failed: {e.stderr}")
 
 
 @router.post("/upload")
-async def upload_package(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def upload_package(background_tasks: BackgroundTasks, current_user: User = Depends(require_admin), file: UploadFile = File(...)):
     if not file.filename.endswith(".zip") and not file.filename.endswith(".tar.gz"):
         raise HTTPException(status_code=400, detail="Only .zip or .tar.gz files are allowed.")
     upload_dir = tempfile.mkdtemp(prefix="hpkg_upload_")
@@ -356,6 +367,7 @@ async def upload_package(background_tasks: BackgroundTasks, file: UploadFile = F
         pkg_name = file.filename.rsplit('-', 1)[0].lower() if file.filename.count('-') >= 2 else file.filename.split('.')[0]
         pkg_slug = pkg_name.split("-")[1] if pkg_name.count("-") >= 1 else pkg_name
         save_registry_entry(pkg_name, _manifest_repo(pkg_slug), "github_zip" if _manifest_repo(pkg_slug) else "upload")
+        log_action(current_user.username, "package.install", pkg_name, f"upload={file.filename}")
         return {"status": "success", "message": f"Successfully installed {file.filename}. Server will restart shortly.", "logs": "\n".join(logs)}
     except HTTPException:
         raise
@@ -364,7 +376,7 @@ async def upload_package(background_tasks: BackgroundTasks, file: UploadFile = F
 
 
 @router.post("/uninstall")
-async def uninstall_package(request: PackageUninstallRequest, background_tasks: BackgroundTasks):
+async def uninstall_package(request: PackageUninstallRequest, background_tasks: BackgroundTasks, current_user: User = Depends(require_admin)):
     try:
         await lifecycle.run_uninstall_hooks(request.package_name, request.force)
     except Exception as e:
@@ -374,8 +386,10 @@ async def uninstall_package(request: PackageUninstallRequest, background_tasks: 
         pkg_slug = request.package_name.split("-")[1] if request.package_name.count("-") >= 1 else request.package_name
         lifecycle.remove_frontend_bundle(pkg_slug)
         background_tasks.add_task(lifecycle.restart_server)
+        log_action(current_user.username, "package.uninstall", request.package_name)
         return {"status": "success", "message": f"Successfully uninstalled {request.package_name}. Server will restart shortly.", "logs": logs}
     except subprocess.CalledProcessError as e:
+        log_action(current_user.username, "package.uninstall", request.package_name, e.stderr, status="error")
         raise HTTPException(status_code=500, detail=f"Uninstallation failed: {e.stderr}")
 
 

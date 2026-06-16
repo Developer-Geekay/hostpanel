@@ -145,6 +145,7 @@ def _migrate_portal_users():
         return
     with get_conn() as conn:
         if conn.execute("SELECT COUNT(*) FROM portal_users").fetchone()[0] > 0:
+            os.remove(path)
             return
         try:
             with open(path) as f:
@@ -157,6 +158,7 @@ def _migrate_portal_users():
                      int(u.get("protected", False))),
                 )
             logger.info(f"Migrated {len(users)} portal user(s) from JSON → SQLite")
+            os.remove(path)
         except Exception as e:
             logger.error(f"portal_users JSON migration failed: {e}")
 
@@ -167,6 +169,7 @@ def _migrate_domains():
         return
     with get_conn() as conn:
         if conn.execute("SELECT COUNT(*) FROM domains").fetchone()[0] > 0:
+            os.remove(path)
             return
         try:
             with open(path) as f:
@@ -178,6 +181,7 @@ def _migrate_domains():
                      d.get("status", "active"), d.get("created_at")),
                 )
             logger.info(f"Migrated {len(domains)} domain(s) from JSON → SQLite")
+            os.remove(path)
         except Exception as e:
             logger.error(f"domains JSON migration failed: {e}")
 
@@ -188,6 +192,7 @@ def _migrate_subdomains():
         return
     with get_conn() as conn:
         if conn.execute("SELECT COUNT(*) FROM subdomains").fetchone()[0] > 0:
+            os.remove(path)
             return
         try:
             with open(path) as f:
@@ -200,6 +205,7 @@ def _migrate_subdomains():
                      s.get("username", ""), s.get("status", "active")),
                 )
             logger.info(f"Migrated {len(subs)} subdomain(s) from JSON → SQLite")
+            os.remove(path)
         except Exception as e:
             logger.error(f"subdomains JSON migration failed: {e}")
 
