@@ -37,47 +37,85 @@
       margin: 0 auto 1.5rem;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    h1 {
-      font-size: 1.1rem;
-      font-weight: 600;
-      margin-bottom: 0.5rem;
-      color: #f1f5f9;
-    }
-    p {
-      font-size: 0.875rem;
-      color: #94a3b8;
-      line-height: 1.5;
-    }
-    .counter {
+    h1 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; color: #f1f5f9; }
+    p { font-size: 0.875rem; color: #94a3b8; line-height: 1.5; }
+    .counter { margin-top: 1.5rem; font-size: 0.8rem; color: #64748b; }
+    .counter span { color: #38bdf8; font-weight: 600; }
+    .offline { display: none; }
+    .offline h1 { color: #f87171; }
+    .offline p { color: #94a3b8; }
+    .retry-btn {
       margin-top: 1.5rem;
-      font-size: 0.8rem;
-      color: #64748b;
-    }
-    .counter span {
+      padding: 0.5rem 1.25rem;
+      background: #1e3a5f;
       color: #38bdf8;
-      font-weight: 600;
+      border: 1px solid #38bdf8;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
     }
+    .retry-btn:hover { background: #1e40af; }
   </style>
 </head>
 <body>
-  <div class="card">
+  <div class="card" id="restarting">
     <div class="logo">HostPanel</div>
     <div class="spinner"></div>
     <h1>Server is restarting</h1>
     <p>A package was just installed or removed.<br>The panel will be back in a few seconds.</p>
     <div class="counter">Retrying in <span id="t">3</span>s…</div>
   </div>
+
+  <div class="card offline" id="offline">
+    <div class="logo">HostPanel</div>
+    <h1>Server is offline</h1>
+    <p>The panel is not responding.<br>It may have been stopped or is taking longer than expected to start.</p>
+    <button class="retry-btn" onclick="startRetry()">Try again</button>
+  </div>
+
   <script>
-    var secs = 3;
-    var el = document.getElementById('t');
-    var iv = setInterval(function () {
-      secs--;
-      el.textContent = secs;
-      if (secs <= 0) {
-        clearInterval(iv);
-        location.reload();
-      }
-    }, 1000);
+    var MAX_ATTEMPTS = 10;
+    var KEY = 'hp_502_attempts';
+    var attempts = parseInt(sessionStorage.getItem(KEY) || '0', 10);
+
+    function startRetry() {
+      sessionStorage.setItem(KEY, '0');
+      document.getElementById('offline').style.display = 'none';
+      document.getElementById('restarting').style.display = 'block';
+      countdown();
+    }
+
+    function showOffline() {
+      sessionStorage.removeItem(KEY);
+      document.getElementById('restarting').style.display = 'none';
+      document.getElementById('offline').style.display = 'block';
+    }
+
+    function countdown() {
+      var secs = 3;
+      var el = document.getElementById('t');
+      if (!el) return;
+      var iv = setInterval(function () {
+        secs--;
+        el.textContent = secs;
+        if (secs <= 0) {
+          clearInterval(iv);
+          attempts++;
+          sessionStorage.setItem(KEY, String(attempts));
+          if (attempts >= MAX_ATTEMPTS) {
+            showOffline();
+          } else {
+            location.reload();
+          }
+        }
+      }, 1000);
+    }
+
+    if (attempts >= MAX_ATTEMPTS) {
+      showOffline();
+    } else {
+      countdown();
+    }
   </script>
 </body>
 </html>
