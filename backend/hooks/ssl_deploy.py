@@ -150,11 +150,10 @@ server {{
 
 
 def _update_nginx_main_vhost(root_domain: str, linux_user: str, ssl_dir: str) -> None:
-    """Write the HTTPS nginx vhost for the main domain (port 80→443) and reload nginx."""
+    """Write the nginx vhost for the main domain using the central renderer."""
     vhosts_dir = "/opt/hostpanel/plugins/nginx/vhosts"
     nginx_bin  = "/opt/hostpanel/plugins/nginx/nginx"
     nginx_conf = "/opt/hostpanel/plugins/nginx/nginx.conf"
-    log_dir    = "/opt/hostpanel/plugins/nginx/logs"
     vhost_path = os.path.join(vhosts_dir, f"{root_domain}.conf")
 
     if not os.path.isdir(vhosts_dir):
@@ -165,49 +164,9 @@ def _update_nginx_main_vhost(root_domain: str, linux_user: str, ssl_dir: str) ->
     if not os.path.exists(cert_path) or not os.path.exists(key_path):
         return
 
-    doc_root = f"/home/{linux_user}/public_html"
-
-    vhost_config = f"""# Redirect HTTP → HTTPS
-server {{
-    listen 80;
-    server_name {root_domain} www.{root_domain};
-
-    location ^~ /.well-known/acme-challenge/ {{
-        root {doc_root};
-        default_type "text/plain";
-        try_files $uri =404;
-    }}
-
-    location / {{
-        return 301 https://$host$request_uri;
-    }}
-}}
-
-# HTTPS
-server {{
-    listen 443 ssl;
-    server_name {root_domain} www.{root_domain};
-    root {doc_root};
-    index index.php index.html index.htm;
-
-    ssl_certificate     {cert_path};
-    ssl_certificate_key {key_path};
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    add_header Strict-Transport-Security "max-age=31536000" always;
-
-    access_log {log_dir}/{root_domain}.access.log;
-    error_log  {log_dir}/{root_domain}.error.log;
-
-    location / {{
-        try_files $uri $uri/ /index.html;
-    }}
-}}
-"""
-
     try:
+        from nginx_vhost import render_domain_vhost
+        vhost_config = render_domain_vhost(root_domain, linux_user, cert_path, key_path)
         with open(vhost_path, "w") as f:
             f.write(vhost_config)
         subprocess.run(
@@ -215,7 +174,7 @@ server {{
              "-c", nginx_conf, "-s", "reload"],
             capture_output=True, timeout=10,
         )
-        print(f"ssl_deploy: nginx main vhost updated to HTTPS (443) for {root_domain}")
+        print(f"ssl_deploy: nginx main vhost updated for {root_domain}")
     except Exception as e:
         print(f"ssl_deploy: could not update nginx main vhost: {e}", file=sys.stderr)
 
