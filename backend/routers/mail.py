@@ -56,14 +56,15 @@ def _rebuild_all() -> None:
     dovecot.rebuild(accounts)
 
 
+import os as _os
+
 # ── Status & Setup ────────────────────────────────────────────────────────────
 
-@router.get("/status")
-async def mail_status(_: User = Depends(require_admin)):
-    return {
-        "postfix": postfix.postfix_running(),
-        "dovecot": dovecot.dovecot_running(),
-    }
+@router.get("/configured")
+async def mail_configured(_: User = Depends(require_admin)):
+    """Returns whether initial mail setup has been run (config files exist)."""
+    import os as _o
+    return {"configured": _o.path.isfile(dovecot.VMAIL_USERS_FILE)}
 
 
 @router.post("/setup")
@@ -73,6 +74,10 @@ async def mail_setup(current_user: User = Depends(require_admin)):
     Postfix and Dovecot must already be installed via apt before running this.
     """
     errors = []
+
+    # Create HostPanel mail directory for managed config/data files
+    subprocess.run(["sudo", "mkdir", "-p", postfix.MAIL_DIR], capture_output=True)
+    subprocess.run(["sudo", "chmod", "755", postfix.MAIL_DIR], capture_output=True)
 
     # Create vmail group and user (uid/gid 5000) if not present
     r = subprocess.run(["getent", "group", "vmail"], capture_output=True)
@@ -86,7 +91,7 @@ async def mail_setup(current_user: User = Depends(require_admin)):
             "-d", "/var/mail/vhosts", "-s", "/usr/sbin/nologin", "vmail"
         ], capture_output=True)
 
-    # Create mail storage root
+    # Create mail storage root under standard OS path (Postfix/Dovecot convention)
     subprocess.run(["sudo", "mkdir", "-p", "/var/mail/vhosts"], capture_output=True)
     subprocess.run(["sudo", "/opt/hostpanel/bin/hp-chown", "vmail:/var/mail/vhosts"], capture_output=True)
     subprocess.run(["sudo", "chmod", "755", "/var/mail/vhosts"], capture_output=True)
@@ -116,12 +121,7 @@ async def mail_setup(current_user: User = Depends(require_admin)):
     subprocess.run(["sudo", "systemctl", "restart", "dovecot"], capture_output=True)
 
     log_action(current_user.username, "mail.setup", detail="Mail server configured")
-    return {
-        "ok":     len(errors) == 0,
-        "errors": errors,
-        "postfix": postfix.postfix_running(),
-        "dovecot": dovecot.dovecot_running(),
-    }
+    return {"ok": len(errors) == 0, "errors": errors}
 
 
 # ── Domains ───────────────────────────────────────────────────────────────────

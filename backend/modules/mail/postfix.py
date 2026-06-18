@@ -3,9 +3,10 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
-VIRTUAL_DOMAINS = "/etc/postfix/virtual_domains"
-VIRTUAL_MAILBOX = "/etc/postfix/virtual_mailbox"
-VIRTUAL_ALIAS   = "/etc/postfix/virtual_alias"
+MAIL_DIR        = "/opt/hostpanel/mail"
+VIRTUAL_DOMAINS = f"{MAIL_DIR}/virtual_domains"
+VIRTUAL_MAILBOX = f"{MAIL_DIR}/virtual_mailbox"
+VIRTUAL_ALIAS   = f"{MAIL_DIR}/virtual_alias"
 VMAIL_BASE      = "/var/mail/vhosts"
 VMAIL_UID       = "5000"
 VMAIL_GID       = "5000"

@@ -4,8 +4,10 @@ import subprocess
 from modules.services.exceptions import ServiceActionFailed, ServiceActionTimeout
 
 BUILTIN_SERVICES: list[dict] = [
-    {"name": "api", "unit": "hostpanel-api", "label": "Panel API",  "icon": "api", "can_reload": False},
-    {"name": "dns", "unit": "pdns",          "label": "DNS Server", "icon": "dns", "can_reload": False},
+    {"name": "api",     "unit": "hostpanel-api", "label": "Panel API",    "icon": "api",  "can_reload": False},
+    {"name": "dns",     "unit": "pdns",          "label": "DNS Server",   "icon": "dns",  "can_reload": False},
+    {"name": "postfix", "unit": "postfix",        "label": "Mail (SMTP)",  "icon": "mail", "can_reload": True},
+    {"name": "dovecot", "unit": "dovecot",        "label": "Mail (IMAP)",  "icon": "mail", "can_reload": True},
 ]
 
 

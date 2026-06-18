@@ -5,43 +5,50 @@ from passlib.hash import sha512_crypt
 
 logger = logging.getLogger(__name__)
 
-VMAIL_USERS_FILE = "/etc/dovecot/vmail_users"
+MAIL_DIR         = "/opt/hostpanel/mail"
+VMAIL_USERS_FILE = f"{MAIL_DIR}/vmail_users"
 VMAIL_UID        = "5000"
 VMAIL_GID        = "5000"
 VMAIL_HOME_BASE  = "/var/mail/vhosts"
 
-DOVECOT_AUTH_CONF = "/etc/dovecot/conf.d/10-auth.conf"
-DOVECOT_MAIL_CONF = "/etc/dovecot/conf.d/10-mail.conf"
+# HostPanel writes its auth/mail config here; Dovecot picks them up via the
+# thin include file written to conf.d/99-hostpanel.conf during setup.
+DOVECOT_AUTH_CONF     = f"{MAIL_DIR}/dovecot-auth.conf"
+DOVECOT_MAIL_CONF     = f"{MAIL_DIR}/dovecot-mail.conf"
+DOVECOT_INCLUDE_CONF  = "/etc/dovecot/conf.d/99-hostpanel.conf"
 
-_AUTH_CONF_CONTENT = """\
-##
-## Authentication processes — managed by HostPanel
-##
+_INCLUDE_CONF_CONTENT = f"""\
+## HostPanel mail config -- included by Dovecot
+## Do not edit manually; managed by HostPanel setup.
+!include {MAIL_DIR}/dovecot-auth.conf
+!include {MAIL_DIR}/dovecot-mail.conf
+"""
+
+_AUTH_CONF_CONTENT = f"""\
+## Authentication -- managed by HostPanel (stored in /opt/hostpanel/mail/)
 
 auth_allow_cleartext = yes
 auth_mechanisms = plain login
 
-passdb passwd-file {
+passdb passwd-file {{
   default_password_scheme = SHA512-CRYPT
-  auth_username_format = %{user}
-  passwd_file_path = /etc/dovecot/vmail_users
-}
+  auth_username_format = %{{user}}
+  passwd_file_path = {VMAIL_USERS_FILE}
+}}
 
-userdb passwd-file {
-  auth_username_format = %{user}
-  passwd_file_path = /etc/dovecot/vmail_users
-  fields {
-    uid = 5000
-    gid = 5000
-    home = /var/mail/vhosts/%{user|domain}/%{user|username}
-  }
-}
+userdb passwd-file {{
+  auth_username_format = %{{user}}
+  passwd_file_path = {VMAIL_USERS_FILE}
+  fields {{
+    uid = {VMAIL_UID}
+    gid = {VMAIL_GID}
+    home = /var/mail/vhosts/%{{user|domain}}/%{{user|username}}
+  }}
+}}
 """
 
 _MAIL_CONF_CONTENT = """\
-##
-## Mailbox locations — managed by HostPanel
-##
+## Mailbox locations -- managed by HostPanel (stored in /opt/hostpanel/mail/)
 
 mail_driver = maildir
 mail_path = /var/mail/vhosts/%{user|domain}/%{user|username}
@@ -69,33 +76,26 @@ def hash_password(plain: str) -> str:
 
 
 def configure_dovecot() -> None:
-    """Write HostPanel auth and mail config files for virtual users."""
+    """Write HostPanel-managed Dovecot config files under /opt/hostpanel/mail/
+    and install a thin include file so Dovecot picks them up."""
     _tee(DOVECOT_AUTH_CONF, _AUTH_CONF_CONTENT)
     _tee(DOVECOT_MAIL_CONF, _MAIL_CONF_CONTENT)
+    _tee(DOVECOT_INCLUDE_CONF, _INCLUDE_CONF_CONTENT)
     logger.info("Dovecot virtual user config applied")
 
 
 def rebuild(accounts: list[dict]) -> None:
-    """Rewrite /etc/dovecot/vmail_users from current account list and reload Dovecot."""
+    """Rewrite vmail_users under /opt/hostpanel/mail/ and reload Dovecot."""
     lines = []
     for acc in accounts:
-        email   = acc["email"]
-        domain  = acc["domain"]
+        email     = acc["email"]
+        domain    = acc["domain"]
         localpart = email.split("@")[0]
-        pw_hash = acc.get("passwd_hash", "")
-        home    = f"{VMAIL_HOME_BASE}/{domain}/{localpart}"
-        # Format: user:hash:uid:gid:gecos:home:shell:extra
+        pw_hash   = acc.get("passwd_hash", "")
+        home      = f"{VMAIL_HOME_BASE}/{domain}/{localpart}"
         lines.append(f"{email}:{pw_hash}:{VMAIL_UID}:{VMAIL_GID}::{home}::")
     content = "\n".join(lines) + "\n" if lines else "\n"
     _tee(VMAIL_USERS_FILE, content)
     _run(["sudo", "chmod", "640", VMAIL_USERS_FILE])
     _run(["sudo", "doveadm", "reload"])
     logger.info(f"Dovecot vmail_users rebuilt: {len(accounts)} account(s)")
-
-
-def dovecot_running() -> bool:
-    r = subprocess.run(
-        ["sudo", "systemctl", "is-active", "dovecot"],
-        capture_output=True, text=True
-    )
-    return r.stdout.strip() == "active"

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Mail as MailIcon, Plus, Trash2, RefreshCw, KeyRound, CheckCircle2, XCircle } from 'lucide-react';
+import { Mail as MailIcon, Plus, Trash2, KeyRound, AlertTriangle } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { PageSpinner } from '../../components/ui/Spinner';
@@ -8,18 +8,16 @@ import { apiGet, apiPost, apiDelete } from '../../lib/api';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface MailStatus { postfix: boolean; dovecot: boolean; }
-interface MailDomain { domain: string; owner: string; created_at: string; }
+interface MailDomain  { domain: string; owner: string; created_at: string; }
 interface MailAccount { email: string; domain: string; owner: string; quota_mb: number; created_at: string; }
 interface MailAlias   { alias: string; target: string; domain: string; owner: string; created_at: string; }
 
-type Tab = 'server' | 'domains' | 'accounts' | 'aliases';
+type Tab = 'domains' | 'accounts' | 'aliases';
 
-// ── Small tab bar ──────────────────────────────────────────────────────────────
+// ── Tab bar ────────────────────────────────────────────────────────────────────
 
 function TabBar({ tab, onChange }: { tab: Tab; onChange(t: Tab): void }) {
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'server',   label: 'Server' },
     { key: 'domains',  label: 'Domains' },
     { key: 'accounts', label: 'Accounts' },
     { key: 'aliases',  label: 'Aliases' },
@@ -38,16 +36,29 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange(t: Tab): void }) {
   );
 }
 
-// ── Status badge ───────────────────────────────────────────────────────────────
+// ── Setup banner ───────────────────────────────────────────────────────────────
 
-function SvcBadge({ running, label }: { running: boolean; label: string }) {
+function SetupBanner({ onSetup }: { onSetup(): Promise<void> }) {
+  const [running, setRunning] = useState(false);
+  async function run() {
+    setRunning(true);
+    await onSetup();
+    setRunning(false);
+  }
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-      {running
-        ? <CheckCircle2 size={14} style={{ color: 'var(--green)' }} />
-        : <XCircle      size={14} style={{ color: 'var(--red)' }} />}
-      <span style={{ color: 'var(--text-2)' }}>{label}</span>
-      <span className={`badge ${running ? 'badge-ok' : 'badge-err'}`}>{running ? 'running' : 'stopped'}</span>
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
+      background: 'var(--warn-dim, rgba(234,179,8,0.1))', border: '1px solid var(--warn, #ca8a04)',
+      borderRadius: 'var(--radius)', marginBottom: 16, fontSize: 13,
+    }}>
+      <AlertTriangle size={16} style={{ color: 'var(--warn, #ca8a04)', flexShrink: 0 }} />
+      <span style={{ flex: 1, color: 'var(--text-2)' }}>
+        Mail server is not configured yet. Run initial setup to enable virtual mailboxes.
+        <span style={{ color: 'var(--text-2)', fontSize: 11, display: 'block', marginTop: 2 }}>
+          Requires Postfix + Dovecot installed via apt. Manage service start/stop in the Services page.
+        </span>
+      </span>
+      <Button variant="primary" size="sm" loading={running} onClick={run}>Configure</Button>
     </div>
   );
 }
@@ -56,12 +67,8 @@ function SvcBadge({ running, label }: { running: boolean; label: string }) {
 
 export default function Mail() {
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>('server');
-
-  // server
-  const [status,       setStatus]       = useState<MailStatus | null>(null);
-  const [statusLoading, setStatusLoading] = useState(true);
-  const [setting, setSetting] = useState(false);
+  const [tab, setTab] = useState<Tab>('domains');
+  const [configured, setConfigured] = useState<boolean | null>(null);
 
   // domains
   const [domains,        setDomains]        = useState<MailDomain[]>([]);
@@ -92,11 +99,11 @@ export default function Mail() {
 
   // ── Loaders ──────────────────────────────────────────────────────────────────
 
-  const loadStatus = useCallback(async () => {
-    setStatusLoading(true);
-    try { setStatus(await apiGet<MailStatus>('mail/status')); }
-    catch { setStatus(null); }
-    finally { setStatusLoading(false); }
+  const checkConfigured = useCallback(async () => {
+    try {
+      const r = await apiGet<{ configured: boolean }>('mail/configured');
+      setConfigured(r.configured);
+    } catch { setConfigured(false); }
   }, []);
 
   const loadDomains = useCallback(async () => {
@@ -120,31 +127,29 @@ export default function Mail() {
     finally { setAliasesLoading(false); }
   }, [toast]);
 
-  useEffect(() => { loadStatus(); }, [loadStatus]);
+  useEffect(() => { checkConfigured(); }, [checkConfigured]);
   useEffect(() => { if (tab === 'domains')  loadDomains();  }, [tab, loadDomains]);
   useEffect(() => { if (tab === 'accounts') loadAccounts(); }, [tab, loadAccounts]);
   useEffect(() => { if (tab === 'aliases')  loadAliases();  }, [tab, loadAliases]);
 
-  // ── Actions ───────────────────────────────────────────────────────────────────
+  // ── Setup ──────────────────────────────────────────────────────────────────────
 
   async function runSetup() {
-    setSetting(true);
     try {
-      const r = await apiPost<MailStatus & { ok: boolean; errors: string[] }>('mail/setup');
-      setStatus({ postfix: r.postfix, dovecot: r.dovecot });
-      if (r.ok) toast.ok('Mail server configured');
-      else      toast.err(r.errors.join('; ') || 'Setup had errors');
+      const r = await apiPost<{ ok: boolean; errors: string[] }>('mail/setup');
+      if (r.ok) { toast.ok('Mail server configured'); setConfigured(true); }
+      else       toast.err(r.errors.join('; ') || 'Setup had errors');
     } catch (e) { toast.err(e instanceof Error ? e.message : 'Setup failed'); }
-    finally { setSetting(false); }
   }
+
+  // ── Domain actions ────────────────────────────────────────────────────────────
 
   async function addDomain() {
     setSavingDomain(true);
     try {
       await apiPost('mail/domains', { domain: newDomain.trim().toLowerCase() });
       toast.ok(`Domain ${newDomain} added`);
-      setAddDomainOpen(false); setNewDomain('');
-      loadDomains();
+      setAddDomainOpen(false); setNewDomain(''); loadDomains();
     } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to add domain'); }
     finally { setSavingDomain(false); }
   }
@@ -157,13 +162,14 @@ export default function Mail() {
     } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to remove domain'); }
   }
 
+  // ── Account actions ───────────────────────────────────────────────────────────
+
   async function addAccount() {
     setSavingAccount(true);
     try {
       await apiPost('mail/accounts', accountForm);
       toast.ok(`Account ${accountForm.email} created`);
-      setAddAccountOpen(false); setAccountForm({ email: '', password: '', quota_mb: 1024 });
-      loadAccounts();
+      setAddAccountOpen(false); setAccountForm({ email: '', password: '', quota_mb: 1024 }); loadAccounts();
     } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to create account'); }
     finally { setSavingAccount(false); }
   }
@@ -186,13 +192,14 @@ export default function Mail() {
     finally { setSavingPwd(false); }
   }
 
+  // ── Alias actions ─────────────────────────────────────────────────────────────
+
   async function addAlias() {
     setSavingAlias(true);
     try {
       await apiPost('mail/aliases', aliasForm);
       toast.ok(`Alias ${aliasForm.alias} created`);
-      setAddAliasOpen(false); setAliasForm({ alias: '', target: '' });
-      loadAliases();
+      setAddAliasOpen(false); setAliasForm({ alias: '', target: '' }); loadAliases();
     } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to create alias'); }
     finally { setSavingAlias(false); }
   }
@@ -215,8 +222,8 @@ export default function Mail() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-title">Mail Server</div>
-          <div className="page-desc">Postfix + Dovecot virtual mailboxes</div>
+          <div className="page-title">Mail</div>
+          <div className="page-desc">Virtual mailboxes — Postfix + Dovecot</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <TabBar tab={tab} onChange={setTab} />
@@ -227,32 +234,8 @@ export default function Mail() {
         </div>
       </div>
 
-      {/* ── Server tab ── */}
-      {tab === 'server' && (
-        statusLoading ? <PageSpinner /> : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 500 }}>
-            <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Service Status</div>
-              <SvcBadge running={status?.postfix ?? false} label="Postfix (SMTP)" />
-              <SvcBadge running={status?.dovecot ?? false} label="Dovecot (IMAP/POP3)" />
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button variant="primary" size="sm" loading={setting} onClick={runSetup}>
-                Configure Mail Server
-              </Button>
-              <Button variant="ghost" size="sm" icon={<RefreshCw size={13} strokeWidth={1.5} />}
-                onClick={loadStatus}>
-                Refresh
-              </Button>
-            </div>
-            <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
-              Run <strong>Configure</strong> once after installing Postfix &amp; Dovecot via apt.
-              It writes virtual mailbox maps and restarts both services.
-              Safe to run multiple times.
-            </p>
-          </div>
-        )
-      )}
+      {/* Setup banner — shown until initial setup is run */}
+      {configured === false && <SetupBanner onSetup={runSetup} />}
 
       {/* ── Domains tab ── */}
       {tab === 'domains' && (
@@ -365,7 +348,6 @@ export default function Mail() {
 
       {/* ── Modals ── */}
 
-      {/* Add Domain */}
       <Modal open={addDomainOpen} onClose={() => { setAddDomainOpen(false); setNewDomain(''); }}
         title="Add Mail Domain" width={380}
         footer={
@@ -382,7 +364,6 @@ export default function Mail() {
         </div>
       </Modal>
 
-      {/* Delete Domain */}
       <Modal open={!!deleteDomain} onClose={() => setDeleteDomain('')}
         title="Remove Mail Domain" width={340}
         footer={
@@ -397,8 +378,8 @@ export default function Mail() {
         </p>
       </Modal>
 
-      {/* Add Account */}
-      <Modal open={addAccountOpen} onClose={() => { setAddAccountOpen(false); setAccountForm({ email: '', password: '', quota_mb: 1024 }); }}
+      <Modal open={addAccountOpen}
+        onClose={() => { setAddAccountOpen(false); setAccountForm({ email: '', password: '', quota_mb: 1024 }); }}
         title="Create Mail Account" width={420}
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
@@ -428,7 +409,6 @@ export default function Mail() {
         </div>
       </Modal>
 
-      {/* Delete Account */}
       <Modal open={!!deleteAccount} onClose={() => setDeleteAccount('')}
         title="Delete Mail Account" width={340}
         footer={
@@ -443,7 +423,6 @@ export default function Mail() {
         </p>
       </Modal>
 
-      {/* Change Password */}
       <Modal open={!!pwdTarget} onClose={() => { if (!savingPwd) { setPwdTarget(''); setNewPwd(''); } }}
         title="Change Password" width={360}
         footer={
@@ -460,8 +439,8 @@ export default function Mail() {
         </div>
       </Modal>
 
-      {/* Add Alias */}
-      <Modal open={addAliasOpen} onClose={() => { setAddAliasOpen(false); setAliasForm({ alias: '', target: '' }); }}
+      <Modal open={addAliasOpen}
+        onClose={() => { setAddAliasOpen(false); setAliasForm({ alias: '', target: '' }); }}
         title="Create Alias" width={420}
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
@@ -485,7 +464,6 @@ export default function Mail() {
         </div>
       </Modal>
 
-      {/* Delete Alias */}
       <Modal open={!!deleteAlias} onClose={() => setDeleteAlias('')}
         title="Delete Alias" width={340}
         footer={
