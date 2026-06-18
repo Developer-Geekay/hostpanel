@@ -18,18 +18,23 @@ _AUTH_CONF_CONTENT = """\
 ## Authentication processes — managed by HostPanel
 ##
 
-disable_plaintext_auth = no
+auth_allow_cleartext = yes
 auth_mechanisms = plain login
 
-passdb {
-  driver = passwd-file
-  args = scheme=SHA512-CRYPT username_format=%u /etc/dovecot/vmail_users
+passdb passwd-file {
+  default_password_scheme = SHA512-CRYPT
+  auth_username_format = %{user}
+  passwd_file_path = /etc/dovecot/vmail_users
 }
 
-userdb {
-  driver = passwd-file
-  args = username_format=%u /etc/dovecot/vmail_users
-  default_fields = uid=5000 gid=5000 home=/var/mail/vhosts/%d/%n
+userdb passwd-file {
+  auth_username_format = %{user}
+  passwd_file_path = /etc/dovecot/vmail_users
+  fields {
+    uid = 5000
+    gid = 5000
+    home = /var/mail/vhosts/%{user|domain}/%{user|username}
+  }
 }
 """
 
@@ -38,7 +43,8 @@ _MAIL_CONF_CONTENT = """\
 ## Mailbox locations — managed by HostPanel
 ##
 
-mail_location = maildir:/var/mail/vhosts/%d/%n
+mail_driver = maildir
+mail_path = /var/mail/vhosts/%{user|domain}/%{user|username}
 mail_privileged_group = vmail
 """
 

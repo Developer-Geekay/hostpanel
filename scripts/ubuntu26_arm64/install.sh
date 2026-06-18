@@ -119,6 +119,14 @@ apt-get install -y -qq \
     sqlite3 \
     lua5.3 liblua5.3-dev || apt-get install -y -qq lua5.4 liblua5.4-dev
 
+# Pre-seed postfix to avoid interactive prompts
+echo "postfix postfix/main_mailer_type select Internet Site" | debconf-set-selections
+echo "postfix postfix/mailname string $(hostname -f)"        | debconf-set-selections
+
+apt-get install -y -qq \
+    postfix postfix-sqlite \
+    dovecot-core dovecot-imapd dovecot-pop3d
+
 info "System packages ready."
 
 # =============================================================================
@@ -312,19 +320,19 @@ usermod -aG hostpanel "$SERVICE_USER"
 info "User '${SERVICE_USER}' added to 'hostpanel' group."
 
 cat > /etc/sudoers.d/hostpanel << 'SUDOERS'
-# HostPanel core sudoers — managed by install.sh
+# HostPanel core sudoers -- managed by install.sh
 # Grants the 'hostpanel' group passwordless sudo for panel operations.
 
-# ── Service management ────────────────────────────────────────────────────────
+# -- Service management -------------------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/systemctl *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/journalctl *
 
-# ── File writes via stdin (replaces cp — avoids two-wildcard rule) ────────────
+# -- File writes via stdin (replaces cp) --------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/tee *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/cat *
 
-# ── chmod by explicit mode (sudo 1.9.15+ forbids two-wildcard rules) ──────────
+# -- chmod by explicit mode (sudo 1.9.15+ forbids two-wildcard rules) ---------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 600 *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 640 *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 644 *
@@ -335,24 +343,34 @@ cat > /etc/sudoers.d/hostpanel << 'SUDOERS'
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 777 *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 *
 
-# ── Directory / file management ───────────────────────────────────────────────
+# -- Directory / file management ----------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/mkdir -p *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/touch *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/rm -f *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/rm -rf *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/visudo -c -f *
 
-# ── Ownership wrapper (chown -R with dynamic user — wrapped to avoid two wildcards) ──
+# -- Ownership wrapper (chown -R with dynamic user) ---------------------------
 %hostpanel ALL=(root) NOPASSWD: /opt/hostpanel/bin/hp-chown *
 
-# ── Linux hosting user management ────────────────────────────────────────────
+# -- chmod wrapper (validates any octal mode) ---------------------------------
+%hostpanel ALL=(root) NOPASSWD: /opt/hostpanel/bin/hp-chmod *
+
+# -- Linux hosting user management --------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/useradd *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/userdel *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/usermod *
-%hostpanel ALL=(root) NOPASSWD: /usr/sbin/chpasswd
+%hostpanel ALL=(root) NOPASSWD: /usr/bin/chpasswd
 
-# ── SSL (certbot) ────────────────────────────────────────────────────────────
+# -- SSL (certbot) ------------------------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/certbot *
+
+# -- Mail (Postfix + Dovecot) -------------------------------------------------
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/postconf *
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/postmap *
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/postfix *
+%hostpanel ALL=(root) NOPASSWD: /usr/bin/doveadm *
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/groupadd *
 SUDOERS
 
 chmod 440 /etc/sudoers.d/hostpanel
@@ -377,6 +395,24 @@ HPCHOWN
 chmod 755 /opt/hostpanel/bin/hp-chown
 chown root:root /opt/hostpanel/bin/hp-chown
 info "Installed hp-chown wrapper."
+
+# Install hp-chmod — validates an octal mode before running chmod, avoiding
+# the need for a per-mode sudo rule for every possible mode value.
+cat > /opt/hostpanel/bin/hp-chmod << 'HPCHMOD'
+#!/bin/bash
+# Usage (via sudo): hp-chmod <mode> <path>
+set -euo pipefail
+MODE="$1"
+TARGET="$2"
+if ! [[ "$MODE" =~ ^[0-7]{3,4}$ ]]; then
+    echo "hp-chmod: invalid mode '$MODE'" >&2
+    exit 1
+fi
+exec /usr/bin/chmod "$MODE" "$TARGET"
+HPCHMOD
+chmod 755 /opt/hostpanel/bin/hp-chmod
+chown root:root /opt/hostpanel/bin/hp-chmod
+info "Installed hp-chmod wrapper."
 
 # =============================================================================
 step "7 / 8 — Backend .env"

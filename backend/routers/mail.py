@@ -88,7 +88,7 @@ async def mail_setup(current_user: User = Depends(require_admin)):
 
     # Create mail storage root
     subprocess.run(["sudo", "mkdir", "-p", "/var/mail/vhosts"], capture_output=True)
-    subprocess.run(["sudo", "chown", "vmail:vmail", "/var/mail/vhosts"], capture_output=True)
+    subprocess.run(["sudo", "/opt/hostpanel/bin/hp-chown", "vmail:/var/mail/vhosts"], capture_output=True)
     subprocess.run(["sudo", "chmod", "755", "/var/mail/vhosts"], capture_output=True)
 
     # Configure Postfix virtual mailbox settings
