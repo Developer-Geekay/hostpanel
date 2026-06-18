@@ -102,6 +102,33 @@ CREATE TABLE IF NOT EXISTS ssl_cert_domains (
 
 CREATE INDEX IF NOT EXISTS idx_ssl_certs_domain   ON ssl_certs(root_domain);
 CREATE INDEX IF NOT EXISTS idx_ssl_cert_domains_c ON ssl_cert_domains(cert_id);
+
+CREATE TABLE IF NOT EXISTS mail_domains (
+    domain     TEXT PRIMARY KEY,
+    owner      TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS mail_accounts (
+    email       TEXT PRIMARY KEY,
+    domain      TEXT NOT NULL REFERENCES mail_domains(domain) ON DELETE CASCADE,
+    owner       TEXT NOT NULL,
+    passwd_hash TEXT NOT NULL,
+    quota_mb    INTEGER NOT NULL DEFAULT 1024,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS mail_aliases (
+    alias      TEXT PRIMARY KEY,
+    target     TEXT NOT NULL,
+    domain     TEXT NOT NULL,
+    owner      TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_mail_accounts_domain ON mail_accounts(domain);
+CREATE INDEX IF NOT EXISTS idx_mail_accounts_owner  ON mail_accounts(owner);
+CREATE INDEX IF NOT EXISTS idx_mail_aliases_domain  ON mail_aliases(domain);
 """
 
 
