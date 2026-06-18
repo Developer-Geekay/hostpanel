@@ -19,6 +19,11 @@ POSTFIX_PARAMS = {
     "virtual_minimum_uid":     "100",
     "virtual_uid_maps":        f"static:{VMAIL_UID}",
     "virtual_gid_maps":        f"static:{VMAIL_GID}",
+    # DKIM signing via OpenDKIM milter
+    "milter_protocol":         "6",
+    "milter_default_action":   "accept",
+    "smtpd_milters":           "inet:127.0.0.1:12301",
+    "non_smtpd_milters":       "inet:127.0.0.1:12301",
 }
 
 

@@ -43,9 +43,10 @@
 # -- SSL (certbot) ------------------------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/certbot *
 
-# -- Mail (Postfix + Dovecot) -------------------------------------------------
+# -- Mail (Postfix + Dovecot + OpenDKIM) --------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/postconf *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/postmap *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/postfix *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/doveadm *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/groupadd *
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/opendkim-genkey *

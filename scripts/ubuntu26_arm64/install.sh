@@ -125,7 +125,8 @@ echo "postfix postfix/mailname string $(hostname -f)"        | debconf-set-selec
 
 apt-get install -y -qq \
     postfix postfix-sqlite \
-    dovecot-core dovecot-imapd dovecot-pop3d
+    dovecot-core dovecot-imapd dovecot-pop3d \
+    opendkim opendkim-tools
 
 info "System packages ready."
 
@@ -365,12 +366,13 @@ cat > /etc/sudoers.d/hostpanel << 'SUDOERS'
 # -- SSL (certbot) ------------------------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/certbot *
 
-# -- Mail (Postfix + Dovecot) -------------------------------------------------
+# -- Mail (Postfix + Dovecot + OpenDKIM) --------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/postconf *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/postmap *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/postfix *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/doveadm *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/groupadd *
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/opendkim-genkey *
 SUDOERS
 
 chmod 440 /etc/sudoers.d/hostpanel

@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,7 +9,7 @@ from auth import User
 from deps import get_current_user, require_admin
 from modules.audit.logger import log_action
 from modules.mail import db as mail_db
-from modules.mail import dovecot, postfix
+from modules.mail import dkim, dovecot, postfix
 from modules.mail.exceptions import (
     MailAccountExists, MailAccountNotFound,
     MailDomainExists, MailDomainNotFound, MailError,
@@ -17,6 +18,8 @@ from modules.mail.exceptions import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cpanelapi/mail", tags=["Mail"])
+
+SERVER_IP = os.environ.get("SERVER_IP", "")
 
 
 # ── Request models ────────────────────────────────────────────────────────────
@@ -56,26 +59,60 @@ def _rebuild_all() -> None:
     dovecot.rebuild(accounts)
 
 
-import os as _os
+async def _provision_dns(domain: str, dkim_txt: str) -> list[str]:
+    """Add MX, mail-A, SPF, and DKIM DNS records for a mail domain.
+    Returns a list of warning strings for any records that couldn't be added
+    (e.g. zone doesn't exist in HostPanel's DNS).
+    """
+    from modules.dns import powerdns
+    from modules.dns.exceptions import DnsServiceError, ZoneNotFound
+
+    warnings = []
+
+    async def _safe_add(zone, name, rtype, content, ttl=3600):
+        try:
+            await powerdns.add_record(zone, name, rtype, content, ttl)
+        except (ZoneNotFound, DnsServiceError) as e:
+            warnings.append(f"DNS {rtype} for {name}: {e}")
+
+    if not SERVER_IP:
+        warnings.append("SERVER_IP not set — skipping DNS provisioning")
+        return warnings
+
+    # PowerDNS requires TXT content to be double-quoted
+    def qtxt(s: str) -> str:
+        return f'"{s}"' if not s.startswith('"') else s
+
+    # mail A record
+    await _safe_add(domain, f"mail.{domain}", "A", SERVER_IP)
+    # MX record
+    await _safe_add(domain, domain, "MX", f"10 mail.{domain}.")
+    # SPF TXT
+    await _safe_add(domain, domain, "TXT", qtxt(f"v=spf1 ip4:{SERVER_IP} ~all"))
+    # DKIM TXT — opendkim-genkey may already include quotes in parts; wrap full value
+    if dkim_txt:
+        await _safe_add(domain, f"mail._domainkey.{domain}", "TXT", qtxt(dkim_txt))
+
+    return warnings
+
 
 # ── Status & Setup ────────────────────────────────────────────────────────────
 
 @router.get("/configured")
 async def mail_configured(_: User = Depends(require_admin)):
     """Returns whether initial mail setup has been run (config files exist)."""
-    import os as _o
-    return {"configured": _o.path.isfile(dovecot.VMAIL_USERS_FILE)}
+    return {"configured": os.path.isfile(dovecot.VMAIL_USERS_FILE)}
 
 
 @router.post("/setup")
 async def mail_setup(current_user: User = Depends(require_admin)):
     """
-    One-time setup: configure Postfix + Dovecot for virtual mailboxes.
-    Postfix and Dovecot must already be installed via apt before running this.
+    One-time setup: configure Postfix + Dovecot + OpenDKIM for virtual mailboxes.
+    Postfix, Dovecot, and opendkim must already be installed via apt before running this.
     """
     errors = []
 
-    # Create HostPanel mail directory for managed config/data files
+    # Create HostPanel mail directory
     subprocess.run(["sudo", "mkdir", "-p", postfix.MAIL_DIR], capture_output=True)
     subprocess.run(["sudo", "chmod", "755", postfix.MAIL_DIR], capture_output=True)
 
@@ -91,34 +128,39 @@ async def mail_setup(current_user: User = Depends(require_admin)):
             "-d", "/var/mail/vhosts", "-s", "/usr/sbin/nologin", "vmail"
         ], capture_output=True)
 
-    # Create mail storage root under standard OS path (Postfix/Dovecot convention)
+    # Mail storage root
     subprocess.run(["sudo", "mkdir", "-p", "/var/mail/vhosts"], capture_output=True)
     subprocess.run(["sudo", "/opt/hostpanel/bin/hp-chown", "vmail:/var/mail/vhosts"], capture_output=True)
     subprocess.run(["sudo", "chmod", "755", "/var/mail/vhosts"], capture_output=True)
 
-    # Configure Postfix virtual mailbox settings
+    # Configure Postfix (includes milter params for DKIM)
     try:
         postfix.configure_postfix()
     except Exception as e:
         errors.append(f"Postfix config: {e}")
 
-    # Write Dovecot virtual user config files
+    # Configure Dovecot
     try:
         dovecot.configure_dovecot()
     except Exception as e:
         errors.append(f"Dovecot config: {e}")
 
-    # Write empty virtual map files so postmap doesn't fail
+    # Configure OpenDKIM
+    try:
+        dkim.configure_opendkim()
+    except Exception as e:
+        errors.append(f"OpenDKIM config: {e}")
+
+    # Write empty virtual map files
     try:
         _rebuild_all()
     except Exception as e:
         errors.append(f"Rebuild maps: {e}")
 
-    # Restart both services
-    subprocess.run(["sudo", "systemctl", "enable", "--now", "postfix"], capture_output=True)
-    subprocess.run(["sudo", "systemctl", "enable", "--now", "dovecot"], capture_output=True)
-    subprocess.run(["sudo", "systemctl", "restart", "postfix"], capture_output=True)
-    subprocess.run(["sudo", "systemctl", "restart", "dovecot"], capture_output=True)
+    # Start all three services
+    for svc in ["postfix", "dovecot", "opendkim"]:
+        subprocess.run(["sudo", "systemctl", "enable", "--now", svc], capture_output=True)
+        subprocess.run(["sudo", "systemctl", "restart", svc], capture_output=True)
 
     log_action(current_user.username, "mail.setup", detail="Mail server configured")
     return {"ok": len(errors) == 0, "errors": errors}
@@ -139,12 +181,67 @@ async def add_domain(body: DomainAdd, current_user: User = Depends(require_admin
         mail_db.add_domain(body.domain, current_user.linux_user or current_user.username)
     except MailDomainExists as e:
         raise HTTPException(status_code=409, detail=str(e))
+
+    # Generate DKIM keypair
+    dkim_txt = ""
+    try:
+        dkim_txt = dkim.generate_key(body.domain)
+    except Exception as e:
+        logger.warning(f"DKIM key generation for {body.domain} failed: {e}")
+
+    # Rebuild OpenDKIM tables
+    try:
+        all_domains = [d["domain"] for d in mail_db.list_domains()]
+        dkim.rebuild(all_domains)
+    except Exception as e:
+        logger.warning(f"OpenDKIM rebuild after domain add failed: {e}")
+
+    # Rebuild Postfix / Dovecot maps
     try:
         _rebuild_all()
     except Exception as e:
         logger.warning(f"Postfix rebuild after domain add failed: {e}")
+
+    # Provision DNS records (MX, A, SPF, DKIM)
+    dns_warnings = []
+    try:
+        dns_warnings = await _provision_dns(body.domain, dkim_txt)
+        if dns_warnings:
+            for w in dns_warnings:
+                logger.warning(w)
+    except Exception as e:
+        logger.warning(f"DNS provisioning for {body.domain} failed: {e}")
+
     log_action(current_user.username, "mail.domain.add", body.domain)
-    return {"ok": True, "domain": body.domain}
+    return {"ok": True, "domain": body.domain, "dns_warnings": dns_warnings}
+
+
+@router.post("/domains/{domain}/refresh-dkim")
+async def refresh_domain_dkim(domain: str, current_user: User = Depends(require_admin)):
+    """Regenerate DKIM keypair for an existing domain and re-provision DNS records."""
+    existing = [d["domain"] for d in mail_db.list_domains()]
+    if domain not in existing:
+        raise HTTPException(status_code=404, detail=f"Domain '{domain}' not found")
+
+    dkim_txt = ""
+    try:
+        dkim.remove_key(domain)
+        dkim_txt = dkim.generate_key(domain)
+        dkim.rebuild(existing)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DKIM key generation failed: {e}")
+
+    dns_warnings = []
+    try:
+        dns_warnings = await _provision_dns(domain, dkim_txt)
+        if dns_warnings:
+            for w in dns_warnings:
+                logger.warning(w)
+    except Exception as e:
+        logger.warning(f"DNS provisioning for {domain} failed: {e}")
+
+    log_action(current_user.username, "mail.domain.refresh_dkim", domain)
+    return {"ok": True, "dns_warnings": dns_warnings}
 
 
 @router.delete("/domains/{domain}")
@@ -153,10 +250,20 @@ async def remove_domain(domain: str, current_user: User = Depends(require_admin)
         mail_db.remove_domain(domain)
     except MailDomainNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+    dkim.remove_key(domain)
+
+    try:
+        all_domains = [d["domain"] for d in mail_db.list_domains()]
+        dkim.rebuild(all_domains)
+    except Exception as e:
+        logger.warning(f"OpenDKIM rebuild after domain remove failed: {e}")
+
     try:
         _rebuild_all()
     except Exception as e:
         logger.warning(f"Postfix rebuild after domain remove failed: {e}")
+
     log_action(current_user.username, "mail.domain.remove", domain)
     return {"ok": True}
 
