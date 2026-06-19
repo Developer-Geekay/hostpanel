@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Mail as MailIcon, Plus, Trash2, KeyRound, AlertTriangle } from 'lucide-react';
+import { Mail as MailIcon, Plus, Trash2, KeyRound, AlertTriangle, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { PageSpinner } from '../../components/ui/Spinner';
@@ -8,29 +8,32 @@ import { apiGet, apiPost, apiDelete } from '../../lib/api';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface MailDomain  { domain: string; owner: string; created_at: string; }
 interface MailAccount { email: string; domain: string; owner: string; quota_mb: number; created_at: string; }
 interface MailAlias   { alias: string; target: string; domain: string; owner: string; created_at: string; }
 
-type Tab = 'domains' | 'accounts' | 'aliases';
+type Tab = 'accounts' | 'aliases';
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function genPassword(len = 16): string {
+  const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';
+  return Array.from(crypto.getRandomValues(new Uint8Array(len)))
+    .map(b => chars[b % chars.length]).join('');
+}
 
 // ── Tab bar ────────────────────────────────────────────────────────────────────
 
 function TabBar({ tab, onChange }: { tab: Tab; onChange(t: Tab): void }) {
-  const tabs: { key: Tab; label: string }[] = [
-    { key: 'domains',  label: 'Domains' },
-    { key: 'accounts', label: 'Accounts' },
-    { key: 'aliases',  label: 'Aliases' },
-  ];
   return (
     <div style={{ display: 'flex', gap: 3 }}>
-      {tabs.map(t => (
-        <button key={t.key} onClick={() => onChange(t.key)} style={{
+      {(['accounts', 'aliases'] as Tab[]).map(t => (
+        <button key={t} onClick={() => onChange(t)} style={{
           padding: '5px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-          background: tab === t.key ? 'var(--accent-dim)' : 'transparent',
-          color: tab === t.key ? 'var(--accent)' : 'var(--text-2)',
+          background: tab === t ? 'var(--accent-dim)' : 'transparent',
+          color: tab === t ? 'var(--accent)' : 'var(--text-2)',
           cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-ui)', transition: 'all var(--transition)',
-        }}>{t.label}</button>
+          textTransform: 'capitalize',
+        }}>{t}</button>
       ))}
     </div>
   );
@@ -40,11 +43,7 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange(t: Tab): void }) {
 
 function SetupBanner({ onSetup }: { onSetup(): Promise<void> }) {
   const [running, setRunning] = useState(false);
-  async function run() {
-    setRunning(true);
-    await onSetup();
-    setRunning(false);
-  }
+  async function run() { setRunning(true); await onSetup(); setRunning(false); }
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
@@ -55,10 +54,96 @@ function SetupBanner({ onSetup }: { onSetup(): Promise<void> }) {
       <span style={{ flex: 1, color: 'var(--text-2)' }}>
         Mail server is not configured yet. Run initial setup to enable virtual mailboxes.
         <span style={{ color: 'var(--text-2)', fontSize: 11, display: 'block', marginTop: 2 }}>
-          Requires Postfix + Dovecot installed via apt. Manage service start/stop in the Services page.
+          Requires Postfix + Dovecot + OpenDKIM installed via apt. Manage service start/stop in Services.
         </span>
       </span>
       <Button variant="primary" size="sm" loading={running} onClick={run}>Configure</Button>
+    </div>
+  );
+}
+
+// ── Split email input ──────────────────────────────────────────────────────────
+
+function EmailInput({
+  username, domain, domains, onUsername, onDomain,
+}: {
+  username: string; domain: string; domains: string[];
+  onUsername(v: string): void; onDomain(v: string): void;
+}) {
+  return (
+    <div style={{
+      display: 'flex', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+      overflow: 'hidden', background: 'var(--input-bg, var(--surface-2))',
+    }}>
+      <input
+        value={username}
+        onChange={e => onUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._+-]/g, ''))}
+        placeholder="username"
+        autoFocus
+        style={{
+          flex: 1, border: 'none', background: 'transparent', outline: 'none',
+          padding: '7px 10px', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font-mono)',
+          minWidth: 0,
+        }}
+      />
+      <div style={{
+        display: 'flex', alignItems: 'center',
+        borderLeft: '1px solid var(--border)', background: 'var(--surface-3, var(--surface-2))',
+        paddingLeft: 2,
+      }}>
+        <span style={{ fontSize: 13, color: 'var(--text-2)', padding: '0 4px 0 8px', userSelect: 'none' }}>@</span>
+        <select
+          value={domain}
+          onChange={e => onDomain(e.target.value)}
+          style={{
+            border: 'none', background: 'transparent', outline: 'none',
+            padding: '7px 10px 7px 2px', fontSize: 13, color: 'var(--text)',
+            cursor: 'pointer', fontFamily: 'var(--font-mono)',
+          }}
+        >
+          {domains.length === 0 && <option value="">No domains</option>}
+          {domains.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+// ── Password input with show/hide + generate ───────────────────────────────────
+
+function PasswordInput({ value, onChange }: { value: string; onChange(v: string): void }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{
+      display: 'flex', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+      overflow: 'hidden', background: 'var(--input-bg, var(--surface-2))',
+    }}>
+      <input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="Min 8 characters"
+        style={{
+          flex: 1, border: 'none', background: 'transparent', outline: 'none',
+          padding: '7px 10px', fontSize: 13, color: 'var(--text)', minWidth: 0,
+        }}
+      />
+      <button type="button" onClick={() => setShow(s => !s)} title={show ? 'Hide' : 'Show'} style={{
+        border: 'none', background: 'transparent', cursor: 'pointer',
+        padding: '0 8px', color: 'var(--text-2)', display: 'flex', alignItems: 'center',
+        borderLeft: '1px solid var(--border)',
+      }}>
+        {show ? <EyeOff size={14} /> : <Eye size={14} />}
+      </button>
+      <button type="button" onClick={() => onChange(genPassword())} title="Generate password" style={{
+        border: 'none', background: 'transparent', cursor: 'pointer',
+        padding: '0 8px', color: 'var(--text-2)', display: 'flex', alignItems: 'center',
+        borderLeft: '1px solid var(--border)', fontSize: 11, gap: 4,
+        whiteSpace: 'nowrap',
+      }}>
+        <RefreshCw size={12} />
+        Generate
+      </button>
     </div>
   );
 }
@@ -67,22 +152,21 @@ function SetupBanner({ onSetup }: { onSetup(): Promise<void> }) {
 
 export default function Mail() {
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>('domains');
+  const [tab, setTab] = useState<Tab>('accounts');
   const [configured, setConfigured] = useState<boolean | null>(null);
 
-  // domains
-  const [domains,        setDomains]        = useState<MailDomain[]>([]);
-  const [domainsLoading, setDomainsLoading] = useState(false);
-  const [addDomainOpen,  setAddDomainOpen]  = useState(false);
-  const [newDomain,      setNewDomain]      = useState('');
-  const [savingDomain,   setSavingDomain]   = useState(false);
-  const [deleteDomain,   setDeleteDomain]   = useState('');
+  // DNS domains for dropdowns
+  const [dnsDomains, setDnsDomains] = useState<string[]>([]);
 
   // accounts
   const [accounts,        setAccounts]        = useState<MailAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [addAccountOpen,  setAddAccountOpen]  = useState(false);
-  const [accountForm,     setAccountForm]     = useState({ email: '', password: '', quota_mb: 1024 });
+  const [accUsername,     setAccUsername]     = useState('');
+  const [accDomain,       setAccDomain]       = useState('');
+  const [accPassword,     setAccPassword]     = useState('');
+  const [accQuota,        setAccQuota]        = useState(1024);
+  const [showQuota,       setShowQuota]       = useState(false);
   const [savingAccount,   setSavingAccount]   = useState(false);
   const [deleteAccount,   setDeleteAccount]   = useState('');
   const [pwdTarget,       setPwdTarget]       = useState('');
@@ -93,7 +177,9 @@ export default function Mail() {
   const [aliases,        setAliases]        = useState<MailAlias[]>([]);
   const [aliasesLoading, setAliasesLoading] = useState(false);
   const [addAliasOpen,   setAddAliasOpen]   = useState(false);
-  const [aliasForm,      setAliasForm]      = useState({ alias: '', target: '' });
+  const [aliasUsername,  setAliasUsername]  = useState('');
+  const [aliasDomain,    setAliasDomain]    = useState('');
+  const [aliasTarget,    setAliasTarget]    = useState('');
   const [savingAlias,    setSavingAlias]    = useState(false);
   const [deleteAlias,    setDeleteAlias]    = useState('');
 
@@ -106,12 +192,14 @@ export default function Mail() {
     } catch { setConfigured(false); }
   }, []);
 
-  const loadDomains = useCallback(async () => {
-    setDomainsLoading(true);
-    try { setDomains((await apiGet<{ domains: MailDomain[] }>('mail/domains')).domains); }
-    catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to load domains'); }
-    finally { setDomainsLoading(false); }
-  }, [toast]);
+  const loadDnsDomains = useCallback(async () => {
+    try {
+      const r = await apiGet<{ domains: string[] }>('mail/available-domains');
+      setDnsDomains(r.domains);
+      if (r.domains.length && !accDomain) setAccDomain(r.domains[0]);
+      if (r.domains.length && !aliasDomain) setAliasDomain(r.domains[0]);
+    } catch { /* silent */ }
+  }, [accDomain, aliasDomain]);
 
   const loadAccounts = useCallback(async () => {
     setAccountsLoading(true);
@@ -127,8 +215,7 @@ export default function Mail() {
     finally { setAliasesLoading(false); }
   }, [toast]);
 
-  useEffect(() => { checkConfigured(); }, [checkConfigured]);
-  useEffect(() => { if (tab === 'domains')  loadDomains();  }, [tab, loadDomains]);
+  useEffect(() => { checkConfigured(); loadDnsDomains(); }, [checkConfigured, loadDnsDomains]);
   useEffect(() => { if (tab === 'accounts') loadAccounts(); }, [tab, loadAccounts]);
   useEffect(() => { if (tab === 'aliases')  loadAliases();  }, [tab, loadAliases]);
 
@@ -142,34 +229,27 @@ export default function Mail() {
     } catch (e) { toast.err(e instanceof Error ? e.message : 'Setup failed'); }
   }
 
-  // ── Domain actions ────────────────────────────────────────────────────────────
+  // ── Open account modal ────────────────────────────────────────────────────────
 
-  async function addDomain() {
-    setSavingDomain(true);
-    try {
-      await apiPost('mail/domains', { domain: newDomain.trim().toLowerCase() });
-      toast.ok(`Domain ${newDomain} added`);
-      setAddDomainOpen(false); setNewDomain(''); loadDomains();
-    } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to add domain'); }
-    finally { setSavingDomain(false); }
-  }
-
-  async function confirmDeleteDomain() {
-    try {
-      await apiDelete(`mail/domains/${deleteDomain}`);
-      toast.ok(`Domain ${deleteDomain} removed`);
-      setDeleteDomain(''); loadDomains();
-    } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to remove domain'); }
+  function openAddAccount() {
+    setAccUsername(''); setAccPassword(''); setAccQuota(1024); setShowQuota(false);
+    if (dnsDomains.length) setAccDomain(dnsDomains[0]);
+    loadDnsDomains();
+    setAddAccountOpen(true);
   }
 
   // ── Account actions ───────────────────────────────────────────────────────────
 
   async function addAccount() {
+    if (!accUsername.trim()) return toast.err('Enter a username');
+    if (!accDomain)          return toast.err('Select a domain');
+    if (accPassword.length < 8) return toast.err('Password must be at least 8 characters');
     setSavingAccount(true);
     try {
-      await apiPost('mail/accounts', accountForm);
-      toast.ok(`Account ${accountForm.email} created`);
-      setAddAccountOpen(false); setAccountForm({ email: '', password: '', quota_mb: 1024 }); loadAccounts();
+      const email = `${accUsername.trim()}@${accDomain}`;
+      await apiPost('mail/accounts', { email, password: accPassword, quota_mb: accQuota });
+      toast.ok(`Account ${email} created`);
+      setAddAccountOpen(false); loadAccounts();
     } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to create account'); }
     finally { setSavingAccount(false); }
   }
@@ -186,20 +266,30 @@ export default function Mail() {
     setSavingPwd(true);
     try {
       await apiPost(`mail/accounts/${encodeURIComponent(pwdTarget)}/password`, { password: newPwd });
-      toast.ok('Password updated');
-      setPwdTarget(''); setNewPwd('');
+      toast.ok('Password updated'); setPwdTarget(''); setNewPwd('');
     } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to update password'); }
     finally { setSavingPwd(false); }
   }
 
   // ── Alias actions ─────────────────────────────────────────────────────────────
 
+  function openAddAlias() {
+    setAliasUsername(''); setAliasTarget('');
+    if (dnsDomains.length) setAliasDomain(dnsDomains[0]);
+    loadDnsDomains();
+    setAddAliasOpen(true);
+  }
+
   async function addAlias() {
+    if (!aliasUsername.trim()) return toast.err('Enter an alias username');
+    if (!aliasDomain)          return toast.err('Select a domain');
+    if (!aliasTarget.trim())   return toast.err('Enter a target address');
     setSavingAlias(true);
     try {
-      await apiPost('mail/aliases', aliasForm);
-      toast.ok(`Alias ${aliasForm.alias} created`);
-      setAddAliasOpen(false); setAliasForm({ alias: '', target: '' }); loadAliases();
+      const alias = `${aliasUsername.trim()}@${aliasDomain}`;
+      await apiPost('mail/aliases', { alias, target: aliasTarget.trim() });
+      toast.ok(`Alias ${alias} created`);
+      setAddAliasOpen(false); loadAliases();
     } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to create alias'); }
     finally { setSavingAlias(false); }
   }
@@ -228,49 +318,12 @@ export default function Mail() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <TabBar tab={tab} onChange={setTab} />
           <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
-          {tab === 'domains'  && addBtn('Add Domain',  () => setAddDomainOpen(true))}
-          {tab === 'accounts' && addBtn('Add Account', () => setAddAccountOpen(true))}
-          {tab === 'aliases'  && addBtn('Add Alias',   () => setAddAliasOpen(true))}
+          {tab === 'accounts' && addBtn('Add Account', openAddAccount)}
+          {tab === 'aliases'  && addBtn('Add Alias',   openAddAlias)}
         </div>
       </div>
 
-      {/* Setup banner — shown until initial setup is run */}
       {configured === false && <SetupBanner onSetup={runSetup} />}
-
-      {/* ── Domains tab ── */}
-      {tab === 'domains' && (
-        domainsLoading ? <PageSpinner /> : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Domain</th><th>Owner</th><th>Added</th><th></th></tr>
-              </thead>
-              <tbody>
-                {domains.length === 0 && (
-                  <tr><td colSpan={4}>
-                    <div className="empty">
-                      <MailIcon size={28} strokeWidth={1.5} className="empty-icon" />
-                      <div className="empty-title">No mail domains</div>
-                      <div className="empty-desc">Add a domain to start creating email accounts.</div>
-                    </div>
-                  </td></tr>
-                )}
-                {domains.map(d => (
-                  <tr key={d.domain}>
-                    <td className="mono" style={{ fontSize: 12 }}>{d.domain}</td>
-                    <td style={{ fontSize: 12, color: 'var(--text-2)' }}>{d.owner}</td>
-                    <td style={{ fontSize: 11, color: 'var(--text-2)' }}>{d.created_at.slice(0, 10)}</td>
-                    <td>
-                      <Button variant="danger" size="sm" icon={<Trash2 size={12} strokeWidth={1.5} />}
-                        onClick={() => setDeleteDomain(d.domain)} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )
-      )}
 
       {/* ── Accounts tab ── */}
       {tab === 'accounts' && (
@@ -286,7 +339,7 @@ export default function Mail() {
                     <div className="empty">
                       <MailIcon size={28} strokeWidth={1.5} className="empty-icon" />
                       <div className="empty-title">No mail accounts</div>
-                      <div className="empty-desc">Add a domain first, then create accounts.</div>
+                      <div className="empty-desc">Click Add Account to create your first email address.</div>
                     </div>
                   </td></tr>
                 )}
@@ -316,11 +369,11 @@ export default function Mail() {
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Alias</th><th>Target</th><th>Domain</th><th>Added</th><th></th></tr>
+                <tr><th>Alias</th><th>Target</th><th>Added</th><th></th></tr>
               </thead>
               <tbody>
                 {aliases.length === 0 && (
-                  <tr><td colSpan={5}>
+                  <tr><td colSpan={4}>
                     <div className="empty">
                       <MailIcon size={28} strokeWidth={1.5} className="empty-icon" />
                       <div className="empty-title">No aliases</div>
@@ -332,7 +385,6 @@ export default function Mail() {
                   <tr key={a.alias}>
                     <td className="mono" style={{ fontSize: 12 }}>{a.alias}</td>
                     <td className="mono" style={{ fontSize: 12, color: 'var(--text-2)' }}>{a.target}</td>
-                    <td style={{ fontSize: 12, color: 'var(--text-2)' }}>{a.domain}</td>
                     <td style={{ fontSize: 11, color: 'var(--text-2)' }}>{a.created_at.slice(0, 10)}</td>
                     <td>
                       <Button variant="danger" size="sm" icon={<Trash2 size={12} strokeWidth={1.5} />}
@@ -346,69 +398,61 @@ export default function Mail() {
         )
       )}
 
-      {/* ── Modals ── */}
-
-      <Modal open={addDomainOpen} onClose={() => { setAddDomainOpen(false); setNewDomain(''); }}
-        title="Add Mail Domain" width={380}
-        footer={
-          <div className="actions" style={{ justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => { setAddDomainOpen(false); setNewDomain(''); }}>Cancel</Button>
-            <Button variant="primary" size="sm" loading={savingDomain} onClick={addDomain}>Add</Button>
-          </div>
-        }>
-        <div className="field">
-          <label>Domain name</label>
-          <input value={newDomain} onChange={e => setNewDomain(e.target.value)}
-            placeholder="example.com" autoFocus
-            onKeyDown={e => e.key === 'Enter' && addDomain()} />
-        </div>
-      </Modal>
-
-      <Modal open={!!deleteDomain} onClose={() => setDeleteDomain('')}
-        title="Remove Mail Domain" width={340}
-        footer={
-          <div className="actions" style={{ justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => setDeleteDomain('')}>Cancel</Button>
-            <Button variant="danger" size="sm" onClick={confirmDeleteDomain}>Remove</Button>
-          </div>
-        }>
-        <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>
-          Remove <strong style={{ color: 'var(--text)' }}>{deleteDomain}</strong>?
-          All accounts and aliases for this domain will be deleted.
-        </p>
-      </Modal>
-
-      <Modal open={addAccountOpen}
-        onClose={() => { setAddAccountOpen(false); setAccountForm({ email: '', password: '', quota_mb: 1024 }); }}
-        title="Create Mail Account" width={420}
+      {/* ── Create Account modal ── */}
+      <Modal open={addAccountOpen} onClose={() => setAddAccountOpen(false)}
+        title="Create Email Account" width={460}
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
             <Button variant="ghost" size="sm" onClick={() => setAddAccountOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" loading={savingAccount} onClick={addAccount}>Create</Button>
+            <Button variant="primary" size="sm" loading={savingAccount} onClick={addAccount}>
+              Create Account
+            </Button>
           </div>
         }>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Email address */}
           <div className="field">
-            <label>Email address</label>
-            <input value={accountForm.email}
-              onChange={e => setAccountForm(f => ({ ...f, email: e.target.value }))}
-              placeholder="user@example.com" autoFocus />
+            <label>Username</label>
+            <EmailInput
+              username={accUsername} domain={accDomain} domains={dnsDomains}
+              onUsername={setAccUsername} onDomain={setAccDomain}
+            />
+            {accUsername && accDomain && (
+              <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 4 }}>
+                Full address: <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>
+                  {accUsername}@{accDomain}
+                </span>
+              </div>
+            )}
           </div>
+
+          {/* Password */}
           <div className="field">
             <label>Password</label>
-            <input type="password" value={accountForm.password}
-              onChange={e => setAccountForm(f => ({ ...f, password: e.target.value }))}
-              placeholder="Min 8 characters" />
+            <PasswordInput value={accPassword} onChange={setAccPassword} />
           </div>
-          <div className="field">
-            <label>Quota (MB)</label>
-            <input type="number" value={accountForm.quota_mb}
-              onChange={e => setAccountForm(f => ({ ...f, quota_mb: Number(e.target.value) }))}
-              min={1} max={102400} />
+
+          {/* Optional: Quota */}
+          <div>
+            <button type="button" onClick={() => setShowQuota(s => !s)} style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              color: 'var(--accent)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4,
+            }}>
+              {showQuota ? '▾' : '▸'} Optional settings
+            </button>
+            {showQuota && (
+              <div className="field" style={{ marginTop: 10 }}>
+                <label>Mailbox quota (MB)</label>
+                <input type="number" value={accQuota}
+                  onChange={e => setAccQuota(Number(e.target.value))}
+                  min={1} max={102400} />
+              </div>
+            )}
           </div>
         </div>
       </Modal>
 
+      {/* ── Delete Account modal ── */}
       <Modal open={!!deleteAccount} onClose={() => setDeleteAccount('')}
         title="Delete Mail Account" width={340}
         footer={
@@ -423,47 +467,53 @@ export default function Mail() {
         </p>
       </Modal>
 
+      {/* ── Change Password modal ── */}
       <Modal open={!!pwdTarget} onClose={() => { if (!savingPwd) { setPwdTarget(''); setNewPwd(''); } }}
-        title="Change Password" width={360}
+        title="Change Password" width={380}
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
             <Button variant="ghost" size="sm" onClick={() => { setPwdTarget(''); setNewPwd(''); }} disabled={savingPwd}>Cancel</Button>
             <Button variant="primary" size="sm" loading={savingPwd} onClick={changePassword}>Update</Button>
           </div>
         }>
-        <div className="field">
-          <label>New password for {pwdTarget}</label>
-          <input type="password" value={newPwd}
-            onChange={e => setNewPwd(e.target.value)}
-            placeholder="Min 8 characters" autoFocus />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, fontFamily: 'var(--font-mono)' }}>
+            {pwdTarget}
+          </div>
+          <div className="field">
+            <label>New password</label>
+            <PasswordInput value={newPwd} onChange={setNewPwd} />
+          </div>
         </div>
       </Modal>
 
-      <Modal open={addAliasOpen}
-        onClose={() => { setAddAliasOpen(false); setAliasForm({ alias: '', target: '' }); }}
-        title="Create Alias" width={420}
+      {/* ── Create Alias modal ── */}
+      <Modal open={addAliasOpen} onClose={() => setAddAliasOpen(false)}
+        title="Create Alias" width={460}
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
             <Button variant="ghost" size="sm" onClick={() => setAddAliasOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" loading={savingAlias} onClick={addAlias}>Create</Button>
+            <Button variant="primary" size="sm" loading={savingAlias} onClick={addAlias}>Create Alias</Button>
           </div>
         }>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="field">
             <label>Alias address</label>
-            <input value={aliasForm.alias}
-              onChange={e => setAliasForm(f => ({ ...f, alias: e.target.value }))}
-              placeholder="info@example.com" autoFocus />
+            <EmailInput
+              username={aliasUsername} domain={aliasDomain} domains={dnsDomains}
+              onUsername={setAliasUsername} onDomain={setAliasDomain}
+            />
           </div>
           <div className="field">
             <label>Forward to</label>
-            <input value={aliasForm.target}
-              onChange={e => setAliasForm(f => ({ ...f, target: e.target.value }))}
+            <input value={aliasTarget}
+              onChange={e => setAliasTarget(e.target.value)}
               placeholder="user@example.com" />
           </div>
         </div>
       </Modal>
 
+      {/* ── Delete Alias modal ── */}
       <Modal open={!!deleteAlias} onClose={() => setDeleteAlias('')}
         title="Delete Alias" width={340}
         footer={

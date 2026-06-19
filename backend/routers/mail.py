@@ -98,6 +98,18 @@ async def _provision_dns(domain: str, dkim_txt: str) -> list[str]:
 
 # ── Status & Setup ────────────────────────────────────────────────────────────
 
+@router.get("/available-domains")
+async def available_domains(_: User = Depends(require_admin)):
+    """Return DNS zones available for mail (falls back to mail_domains if DNS is down)."""
+    from modules.dns import powerdns
+    from modules.dns.exceptions import DnsServiceError
+    try:
+        zones = await powerdns.list_zones()
+        return {"domains": sorted(z["name"] for z in zones)}
+    except DnsServiceError:
+        return {"domains": sorted(d["domain"] for d in mail_db.list_domains())}
+
+
 @router.get("/configured")
 async def mail_configured(_: User = Depends(require_admin)):
     """Returns whether initial mail setup has been run (config files exist)."""
@@ -292,12 +304,28 @@ async def create_account(body: AccountCreate, current_user: User = Depends(requi
     if "@" not in body.email:
         raise HTTPException(status_code=422, detail="email must be a valid address")
     domain = body.email.split("@")[1]
-    domains = [d["domain"] for d in mail_db.list_domains()]
-    if domain not in domains:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Domain '{domain}' is not configured for mail. Add it under Mail → Domains first."
-        )
+    registered = [d["domain"] for d in mail_db.list_domains()]
+    if domain not in registered:
+        # Auto-provision: register domain + generate DKIM + push DNS records
+        try:
+            mail_db.add_domain(domain, current_user.linux_user or current_user.username)
+        except Exception:
+            pass
+        dkim_txt = ""
+        try:
+            dkim_txt = dkim.generate_key(domain)
+            all_domains = [d["domain"] for d in mail_db.list_domains()]
+            dkim.rebuild(all_domains)
+        except Exception as e:
+            logger.warning(f"DKIM auto-provision for {domain} failed: {e}")
+        try:
+            await _provision_dns(domain, dkim_txt)
+        except Exception as e:
+            logger.warning(f"DNS auto-provision for {domain} failed: {e}")
+        try:
+            _rebuild_all()
+        except Exception as e:
+            logger.warning(f"Postfix rebuild during auto-provision failed: {e}")
     passwd_hash = dovecot.hash_password(body.password)
     try:
         mail_db.add_account(
