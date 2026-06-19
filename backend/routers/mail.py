@@ -30,7 +30,7 @@ class DomainAdd(BaseModel):
 class AccountCreate(BaseModel):
     email:    str = Field(..., min_length=3, max_length=254)
     password: str = Field(..., min_length=8, max_length=256)
-    quota_mb: int = Field(default=1024, ge=1, le=102400)
+    quota_mb: int = Field(default=2048, ge=1, le=102400)
 
 class PasswordChange(BaseModel):
     password: str = Field(..., min_length=8, max_length=256)

@@ -11,7 +11,7 @@ import { apiGet, apiPost, apiDelete } from '../../lib/api';
 interface MailAccount { email: string; domain: string; owner: string; quota_mb: number; created_at: string; }
 interface MailAlias   { alias: string; target: string; domain: string; owner: string; created_at: string; }
 
-type Tab = 'accounts' | 'aliases';
+type Tab = 'accounts' | 'forwarders';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -24,16 +24,16 @@ function genPassword(len = 16): string {
 // ── Tab bar ────────────────────────────────────────────────────────────────────
 
 function TabBar({ tab, onChange }: { tab: Tab; onChange(t: Tab): void }) {
+  const labels: Record<Tab, string> = { accounts: 'Accounts', forwarders: 'Forwarders' };
   return (
     <div style={{ display: 'flex', gap: 3 }}>
-      {(['accounts', 'aliases'] as Tab[]).map(t => (
+      {(['accounts', 'forwarders'] as Tab[]).map(t => (
         <button key={t} onClick={() => onChange(t)} style={{
           padding: '5px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
           background: tab === t ? 'var(--accent-dim)' : 'transparent',
           color: tab === t ? 'var(--accent)' : 'var(--text-2)',
           cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-ui)', transition: 'all var(--transition)',
-          textTransform: 'capitalize',
-        }}>{t}</button>
+        }}>{labels[t]}</button>
       ))}
     </div>
   );
@@ -165,7 +165,7 @@ export default function Mail() {
   const [accUsername,     setAccUsername]     = useState('');
   const [accDomain,       setAccDomain]       = useState('');
   const [accPassword,     setAccPassword]     = useState('');
-  const [accQuota,        setAccQuota]        = useState(1024);
+  const [accQuota,        setAccQuota]        = useState(2048);
   const [showQuota,       setShowQuota]       = useState(false);
   const [savingAccount,   setSavingAccount]   = useState(false);
   const [deleteAccount,   setDeleteAccount]   = useState('');
@@ -173,7 +173,7 @@ export default function Mail() {
   const [newPwd,          setNewPwd]          = useState('');
   const [savingPwd,       setSavingPwd]       = useState(false);
 
-  // aliases
+  // forwarders
   const [aliases,        setAliases]        = useState<MailAlias[]>([]);
   const [aliasesLoading, setAliasesLoading] = useState(false);
   const [addAliasOpen,   setAddAliasOpen]   = useState(false);
@@ -216,8 +216,8 @@ export default function Mail() {
   }, [toast]);
 
   useEffect(() => { checkConfigured(); loadDnsDomains(); }, [checkConfigured, loadDnsDomains]);
-  useEffect(() => { if (tab === 'accounts') loadAccounts(); }, [tab, loadAccounts]);
-  useEffect(() => { if (tab === 'aliases')  loadAliases();  }, [tab, loadAliases]);
+  useEffect(() => { if (tab === 'accounts')   loadAccounts(); }, [tab, loadAccounts]);
+  useEffect(() => { if (tab === 'forwarders') loadAliases();  }, [tab, loadAliases]);
 
   // ── Setup ──────────────────────────────────────────────────────────────────────
 
@@ -232,7 +232,7 @@ export default function Mail() {
   // ── Open account modal ────────────────────────────────────────────────────────
 
   function openAddAccount() {
-    setAccUsername(''); setAccPassword(''); setAccQuota(1024); setShowQuota(false);
+    setAccUsername(''); setAccPassword(''); setAccQuota(2048); setShowQuota(false);
     if (dnsDomains.length) setAccDomain(dnsDomains[0]);
     loadDnsDomains();
     setAddAccountOpen(true);
@@ -318,8 +318,8 @@ export default function Mail() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <TabBar tab={tab} onChange={setTab} />
           <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
-          {tab === 'accounts' && addBtn('Add Account', openAddAccount)}
-          {tab === 'aliases'  && addBtn('Add Alias',   openAddAlias)}
+          {tab === 'accounts'   && addBtn('Add Account',   openAddAccount)}
+          {tab === 'forwarders' && addBtn('Add Forwarder', openAddAlias)}
         </div>
       </div>
 
@@ -363,8 +363,8 @@ export default function Mail() {
         )
       )}
 
-      {/* ── Aliases tab ── */}
-      {tab === 'aliases' && (
+      {/* ── Forwarders tab ── */}
+      {tab === 'forwarders' && (
         aliasesLoading ? <PageSpinner /> : (
           <div className="table-wrap">
             <table>
@@ -376,8 +376,8 @@ export default function Mail() {
                   <tr><td colSpan={4}>
                     <div className="empty">
                       <MailIcon size={28} strokeWidth={1.5} className="empty-icon" />
-                      <div className="empty-title">No aliases</div>
-                      <div className="empty-desc">Create an alias to forward email to another address.</div>
+                      <div className="empty-title">No forwarders</div>
+                      <div className="empty-desc">Create a forwarder to route email to another address.</div>
                     </div>
                   </td></tr>
                 )}
@@ -487,18 +487,18 @@ export default function Mail() {
         </div>
       </Modal>
 
-      {/* ── Create Alias modal ── */}
+      {/* ── Create Forwarder modal ── */}
       <Modal open={addAliasOpen} onClose={() => setAddAliasOpen(false)}
-        title="Create Alias" width={460}
+        title="Create Forwarder" width={460}
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
             <Button variant="ghost" size="sm" onClick={() => setAddAliasOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" loading={savingAlias} onClick={addAlias}>Create Alias</Button>
+            <Button variant="primary" size="sm" loading={savingAlias} onClick={addAlias}>Create Forwarder</Button>
           </div>
         }>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="field">
-            <label>Alias address</label>
+            <label>Forward from</label>
             <EmailInput
               username={aliasUsername} domain={aliasDomain} domains={dnsDomains}
               onUsername={setAliasUsername} onDomain={setAliasDomain}
@@ -513,9 +513,9 @@ export default function Mail() {
         </div>
       </Modal>
 
-      {/* ── Delete Alias modal ── */}
+      {/* ── Delete Forwarder modal ── */}
       <Modal open={!!deleteAlias} onClose={() => setDeleteAlias('')}
-        title="Delete Alias" width={340}
+        title="Delete Forwarder" width={340}
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
             <Button variant="ghost" size="sm" onClick={() => setDeleteAlias('')}>Cancel</Button>
@@ -523,7 +523,7 @@ export default function Mail() {
           </div>
         }>
         <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>
-          Delete alias <strong style={{ color: 'var(--text)' }}>{deleteAlias}</strong>?
+          Delete forwarder <strong style={{ color: 'var(--text)' }}>{deleteAlias}</strong>?
         </p>
       </Modal>
     </div>
