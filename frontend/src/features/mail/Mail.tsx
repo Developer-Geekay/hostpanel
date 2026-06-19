@@ -192,7 +192,7 @@ export default function Mail() {
     } catch { setConfigured(false); }
   }, []);
 
-  const loadDnsDomains = useCallback(async () => {
+const loadDnsDomains = useCallback(async () => {
     try {
       const r = await apiGet<{ domains: string[] }>('mail/available-domains');
       setDnsDomains(r.domains);
