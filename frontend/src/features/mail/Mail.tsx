@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Mail as MailIcon, Plus, Trash2, KeyRound, AlertTriangle, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Mail as MailIcon, Plus, Trash2, KeyRound, AlertTriangle, Eye, EyeOff, RefreshCw, Wifi, Copy, Check } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { PageSpinner } from '../../components/ui/Spinner';
@@ -148,6 +148,181 @@ function PasswordInput({ value, onChange }: { value: string; onChange(v: string)
   );
 }
 
+// ── Mail client setup modal ────────────────────────────────────────────────────
+
+function CopyBtn({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+  return (
+    <button onClick={copy} title="Copy" style={{
+      background: copied ? 'var(--accent-dim)' : 'transparent',
+      border: '1px solid ' + (copied ? 'var(--accent)' : 'var(--border)'),
+      borderRadius: 4, cursor: 'pointer', padding: '2px 5px',
+      color: copied ? 'var(--accent)' : 'var(--text-2)',
+      display: 'flex', alignItems: 'center', gap: 3,
+      fontSize: 10, transition: 'all 0.15s', flexShrink: 0,
+    }}>
+      {copied ? <Check size={10} /> : <Copy size={10} />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
+function SettingRow({ label, value, mono = true, badge }: {
+  label: string; value: string; mono?: boolean;
+  badge?: { text: string; color: string; bg: string };
+}) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center',
+      padding: '8px 0', borderBottom: '1px solid var(--border)',
+      gap: 8, minWidth: 0,
+    }}>
+      <span style={{
+        fontSize: 11, color: 'var(--text)', fontWeight: 500,
+        minWidth: 60, flexShrink: 0,
+      }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, justifyContent: 'flex-end' }}>
+        {badge ? (
+          <span style={{
+            fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 99,
+            background: badge.bg, color: badge.color, letterSpacing: '0.04em', flexShrink: 0,
+          }}>{badge.text}</span>
+        ) : (
+          <span title={value} style={{
+            fontFamily: mono ? 'var(--font-mono)' : 'inherit',
+            fontSize: 12, color: '#e2e8f0',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            minWidth: 0,
+          }}>{value}</span>
+        )}
+        <CopyBtn value={value} />
+      </div>
+    </div>
+  );
+}
+
+function ProtocolCard({ title, icon, accentBg, accentColor, rows }: {
+  title: string; icon: React.ReactNode; accentBg: string; accentColor: string;
+  rows: React.ReactNode[];
+}) {
+  return (
+    <div style={{
+      flex: 1, border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+      overflow: 'hidden', minWidth: 0,
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '10px 14px', background: accentBg,
+        borderBottom: '1px solid var(--border)',
+      }}>
+        <span style={{ color: accentColor, display: 'flex' }}>{icon}</span>
+        <span style={{
+          fontSize: 11, fontWeight: 600, letterSpacing: '0.06em',
+          color: accentColor, textTransform: 'uppercase',
+        }}>{title}</span>
+      </div>
+      <div style={{ padding: '0 12px' }}>{rows}</div>
+    </div>
+  );
+}
+
+function ClientSetupModal({ email, onClose }: { email: string; onClose(): void }) {
+  const domain = email.split('@')[1] ?? '';
+  const server = `mail.${domain}`;
+
+  const clients = ['Thunderbird', 'Apple Mail', 'Outlook', 'Gmail', 'iOS Mail', 'Android'];
+
+  return (
+    <Modal open={!!email} onClose={onClose} title="Connect Mail Client" width={600}
+      footer={
+        <div className="actions" style={{ justifyContent: 'flex-end' }}>
+          <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
+        </div>
+      }>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+        {/* Email badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <MailIcon size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--accent)', fontWeight: 500,
+          }}>{email}</span>
+        </div>
+
+        {/* Two protocol cards side by side */}
+        <div style={{ display: 'flex', gap: 12 }}>
+          <ProtocolCard
+            title="Incoming (IMAP)"
+            icon={<Wifi size={14} />}
+            accentBg="rgba(59,130,246,0.08)"
+            accentColor="#60a5fa"
+            rows={[
+              <SettingRow key="s" label="Server"   value={server} />,
+              <SettingRow key="p" label="Port"     value="993"
+                badge={{ text: '993', color: '#60a5fa', bg: 'rgba(59,130,246,0.15)' }} />,
+              <SettingRow key="sec" label="Security" value="SSL / TLS"
+                badge={{ text: 'SSL / TLS', color: '#34d399', bg: 'rgba(52,211,153,0.12)' }} />,
+              <SettingRow key="u" label="Username" value={email} />,
+              <SettingRow key="pw" label="Password" value="(mail password)" mono={false} />,
+            ]}
+          />
+          <ProtocolCard
+            title="Outgoing (SMTP)"
+            icon={<RefreshCw size={14} />}
+            accentBg="rgba(168,85,247,0.08)"
+            accentColor="#c084fc"
+            rows={[
+              <SettingRow key="s" label="Server"   value={server} />,
+              <div key="ports" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 11, color: 'var(--text)', fontWeight: 500 }}>Port</span>
+                <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-2)' }}>STARTTLS</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 99, background: 'rgba(168,85,247,0.15)', color: '#c084fc' }}>587</span>
+                    <CopyBtn value="587" />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-2)' }}>SSL/TLS</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 99, background: 'rgba(52,211,153,0.12)', color: '#34d399' }}>465</span>
+                    <CopyBtn value="465" />
+                  </div>
+                </div>
+              </div>,
+              <SettingRow key="u" label="Username" value={email} />,
+              <SettingRow key="pw" label="Password" value="(mail password)" mono={false} />,
+            ]}
+          />
+        </div>
+
+        {/* Compatible clients */}
+        <div style={{
+          padding: '10px 12px', background: 'var(--surface-2)',
+          borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
+        }}>
+          <div style={{ fontSize: 10, color: 'var(--text-2)', marginBottom: 8, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Compatible Clients
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {clients.map(c => (
+              <span key={c} style={{
+                fontSize: 11, padding: '3px 10px', borderRadius: 99,
+                border: '1px solid var(--border)', color: 'var(--text-2)',
+                background: 'var(--surface-3, var(--surface))',
+              }}>{c}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function Mail() {
@@ -169,6 +344,7 @@ export default function Mail() {
   const [showQuota,       setShowQuota]       = useState(false);
   const [savingAccount,   setSavingAccount]   = useState(false);
   const [deleteAccount,   setDeleteAccount]   = useState('');
+  const [setupEmail,      setSetupEmail]      = useState('');
   const [pwdTarget,       setPwdTarget]       = useState('');
   const [newPwd,          setNewPwd]          = useState('');
   const [savingPwd,       setSavingPwd]       = useState(false);
@@ -350,6 +526,8 @@ const loadDnsDomains = useCallback(async () => {
                     <td style={{ fontSize: 11, color: 'var(--text-2)' }}>{a.quota_mb} MB</td>
                     <td style={{ fontSize: 11, color: 'var(--text-2)' }}>{a.created_at.slice(0, 10)}</td>
                     <td style={{ display: 'flex', gap: 4 }}>
+                      <Button variant="ghost" size="sm" icon={<Wifi size={12} strokeWidth={1.5} />}
+                        onClick={() => setSetupEmail(a.email)} title="Connect mail client" />
                       <Button variant="ghost" size="sm" icon={<KeyRound size={12} strokeWidth={1.5} />}
                         onClick={() => { setPwdTarget(a.email); setNewPwd(''); }} />
                       <Button variant="danger" size="sm" icon={<Trash2 size={12} strokeWidth={1.5} />}
@@ -526,6 +704,9 @@ const loadDnsDomains = useCallback(async () => {
           Delete forwarder <strong style={{ color: 'var(--text)' }}>{deleteAlias}</strong>?
         </p>
       </Modal>
+
+      {/* ── Connect Mail Client modal ── */}
+      <ClientSetupModal email={setupEmail} onClose={() => setSetupEmail('')} />
     </div>
   );
 }

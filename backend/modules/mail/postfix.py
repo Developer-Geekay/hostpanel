@@ -24,7 +24,28 @@ POSTFIX_PARAMS = {
     "milter_default_action":   "accept",
     "smtpd_milters":           "inet:127.0.0.1:12301",
     "non_smtpd_milters":       "inet:127.0.0.1:12301",
+    # SASL auth via Dovecot (for ports 587/465 client submission)
+    "smtpd_sasl_type":         "dovecot",
+    "smtpd_sasl_path":         "private/auth",
+    "smtpd_sasl_auth_enable":  "yes",
 }
+
+# Appended to master.cf once (marker prevents duplicates)
+_MASTER_CF_MARKER = "# HostPanel submission ports"
+_MASTER_CF_BLOCK = """
+# HostPanel submission ports
+submission inet n - n - - smtpd
+  -o syslog_name=postfix/submission
+  -o smtpd_tls_security_level=encrypt
+  -o smtpd_sasl_auth_enable=yes
+  -o smtpd_relay_restrictions=permit_sasl_authenticated,reject
+
+submissions inet n - n - - smtpd
+  -o syslog_name=postfix/submissions
+  -o smtpd_tls_wrappermode=yes
+  -o smtpd_sasl_auth_enable=yes
+  -o smtpd_relay_restrictions=permit_sasl_authenticated,reject
+"""
 
 
 def _tee(path: str, content: str) -> None:
@@ -42,10 +63,29 @@ def _run(cmd: list[str]) -> None:
         logger.warning(f"Command {' '.join(cmd)} failed: {r.stderr.strip()}")
 
 
+def _enable_submission_ports() -> None:
+    """Append submission (587) and submissions (465) blocks to master.cf once."""
+    r = subprocess.run(["sudo", "cat", "/etc/postfix/master.cf"], capture_output=True, text=True)
+    if r.returncode != 0:
+        logger.warning("Could not read master.cf")
+        return
+    if _MASTER_CF_MARKER in r.stdout:
+        return  # already patched
+    r2 = subprocess.run(
+        ["sudo", "tee", "-a", "/etc/postfix/master.cf"],
+        input=_MASTER_CF_BLOCK, text=True, capture_output=True
+    )
+    if r2.returncode != 0:
+        logger.warning(f"Failed to patch master.cf: {r2.stderr.strip()}")
+    else:
+        logger.info("Postfix master.cf: submission ports 587/465 enabled")
+
+
 def configure_postfix() -> None:
     """Apply virtual mailbox settings to Postfix main.cf via postconf."""
     for key, val in POSTFIX_PARAMS.items():
         _run(["sudo", "postconf", "-e", f"{key} = {val}"])
+    _enable_submission_ports()
     logger.info("Postfix virtual mailbox parameters configured")
 
 

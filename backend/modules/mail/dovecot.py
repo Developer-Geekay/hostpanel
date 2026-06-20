@@ -45,6 +45,15 @@ userdb passwd-file {{
     home = /var/mail/vhosts/%{{user|domain}}/%{{user|username}}
   }}
 }}
+
+# SASL auth socket for Postfix (ports 587/465)
+service auth {{
+  unix_listener /var/spool/postfix/private/auth {{
+    mode = 0660
+    user = postfix
+    group = postfix
+  }}
+}}
 """
 
 _MAIL_CONF_CONTENT = """\
