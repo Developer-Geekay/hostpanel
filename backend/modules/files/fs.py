@@ -8,7 +8,7 @@ from typing import Optional
 
 from modules.files.exceptions import PathForbidden, PathNotFound, FileTooLarge, BinaryFile
 
-ALLOWED_ROOTS = ["/home", "/var/www", "/opt/hostpanel/plugins/nginx/vhosts"]
+ALLOWED_ROOTS = ["/home", "/var/www", "/opt/hostpanel/plugins/nginx/vhosts", "/data"]
 MAX_READ_BYTES  = 1 * 1024 * 1024    # 1 MB
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
