@@ -1,16 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api';
 import { useToast } from '../../../components/ui/Toast';
-import type { DnsZone, DnsRecord, Redirect, RecordForm, RedirectForm } from '../types';
+import type { DnsZone, DnsRecord, RecordForm } from '../types';
 
 const EMPTY_RECORD_FORM: RecordForm = { name: '@', type: 'A', content: '', ttl: 300 };
-const EMPTY_REDIRECT_FORM: RedirectForm = {
-  source_domain: '', source_path: '/', dest_url: '', type: 301, www_handling: 'both',
-};
 
 export function useDns() {
   const toast = useToast();
-  const [tab, setTab] = useState<'dns' | 'redirects'>('dns');
 
   // Zones
   const [zones, setZones] = useState<DnsZone[]>([]);
@@ -29,13 +25,6 @@ export function useDns() {
   const [recordForm, setRecordForm] = useState<RecordForm>(EMPTY_RECORD_FORM);
   const [savingRecord, setSavingRecord] = useState(false);
   const [deleteRecordTarget, setDeleteRecordTarget] = useState('');
-
-  // Redirects
-  const [redirects, setRedirects] = useState<Redirect[]>([]);
-  const [redirectsLoading, setRedirectsLoading] = useState(false);
-  const [addRedirectOpen, setAddRedirectOpen] = useState(false);
-  const [redirectForm, setRedirectForm] = useState<RedirectForm>(EMPTY_REDIRECT_FORM);
-  const [savingRedirect, setSavingRedirect] = useState(false);
 
   const loadZones = useCallback(async () => {
     try {
@@ -57,17 +46,6 @@ export function useDns() {
       toast.err(e instanceof Error ? e.message : 'Failed to load records');
     } finally {
       setRecordsLoading(false);
-    }
-  }, [toast]);
-
-  const loadRedirects = useCallback(async () => {
-    setRedirectsLoading(true);
-    try {
-      setRedirects(await apiGet<Redirect[]>('redirects'));
-    } catch (e: unknown) {
-      toast.err(e instanceof Error ? e.message : 'Failed to load redirects');
-    } finally {
-      setRedirectsLoading(false);
     }
   }, [toast]);
 
@@ -129,41 +107,9 @@ export function useDns() {
     }
   }
 
-  async function addRedirect() {
-    if (!redirectForm.source_domain.trim() || !redirectForm.dest_url.trim()) return;
-    setSavingRedirect(true);
-    try {
-      await apiPost('redirects', redirectForm);
-      toast.ok('Redirect created');
-      setAddRedirectOpen(false);
-      setRedirectForm(EMPTY_REDIRECT_FORM);
-      loadRedirects();
-    } catch (e: unknown) {
-      toast.err(e instanceof Error ? e.message : 'Failed to create redirect');
-    } finally {
-      setSavingRedirect(false);
-    }
-  }
-
-  async function deleteRedirect(id: string) {
-    try {
-      await apiDelete(`redirects/${id}`);
-      toast.ok('Redirect deleted');
-      loadRedirects();
-    } catch (e: unknown) {
-      toast.err(e instanceof Error ? e.message : 'Delete failed');
-    }
-  }
-
-  function switchTab(t: 'dns' | 'redirects') {
-    setTab(t);
-    if (t === 'redirects') loadRedirects();
-  }
-
   const filteredRecords = typeFilter === 'All' ? records : records.filter(r => r.type === typeFilter);
 
   return {
-    tab, switchTab,
     zones, zonesLoading, selectedZone, setSelectedZone, setRecords,
     addZoneOpen, setAddZoneOpen, newZone, setNewZone, savingZone,
     deleteZoneTarget, setDeleteZoneTarget,
@@ -172,8 +118,5 @@ export function useDns() {
     addRecordOpen, setAddRecordOpen, recordForm, setRecordForm, savingRecord,
     deleteRecordTarget, setDeleteRecordTarget,
     addRecord, confirmDeleteRecord,
-    redirects, redirectsLoading,
-    addRedirectOpen, setAddRedirectOpen, redirectForm, setRedirectForm, savingRedirect,
-    addRedirect, deleteRedirect,
   };
 }
