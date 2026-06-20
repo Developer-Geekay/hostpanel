@@ -1,16 +1,16 @@
-# HostPanel core sudoers — installed by install.sh
+# HostPanel core sudoers -- installed by install.sh
 # Grants the 'hostpanel' group passwordless sudo for panel operations.
 
-# ── Service management ────────────────────────────────────────────────────────
+# -- Service management -------------------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/systemctl *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/journalctl *
 
-# ── File writes via stdin (replaces cp — avoids two-wildcard rule) ────────────
+# -- File writes via stdin (replaces cp) --------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/tee *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/cat *
 
-# ── chmod by explicit mode (sudo 1.9.15+ forbids two-wildcard rules) ──────────
+# -- chmod by explicit mode (sudo 1.9.15+ forbids two-wildcard rules) ---------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 600 *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 640 *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 644 *
@@ -21,24 +21,32 @@
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 777 *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 *
 
-# ── Directory / file management ───────────────────────────────────────────────
+# -- Directory / file management ----------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/mkdir -p *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/touch *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/rm -f *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/rm -rf *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/visudo -c -f *
 
-# ── Ownership wrapper (chown -R with dynamic user — wrapped to avoid two wildcards) ──
+# -- Ownership wrapper (chown -R with dynamic user) ---------------------------
 %hostpanel ALL=(root) NOPASSWD: /opt/hostpanel/bin/hp-chown *
 
-# ── chmod wrapper (validates any octal mode — avoids enumerating every mode) ──
+# -- chmod wrapper (validates any octal mode) ---------------------------------
 %hostpanel ALL=(root) NOPASSWD: /opt/hostpanel/bin/hp-chmod *
 
-# ── Linux hosting user management ────────────────────────────────────────────
+# -- Linux hosting user management --------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/useradd *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/userdel *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/usermod *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chpasswd
 
-# ── SSL (certbot) ────────────────────────────────────────────────────────────
+# -- SSL (certbot) ------------------------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/certbot *
+
+# -- Mail (Postfix + Dovecot + OpenDKIM) --------------------------------------
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/postconf *
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/postmap *
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/postfix *
+%hostpanel ALL=(root) NOPASSWD: /usr/bin/doveadm *
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/groupadd *
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/opendkim-genkey *

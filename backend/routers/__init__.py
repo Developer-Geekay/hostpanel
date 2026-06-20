@@ -25,3 +25,4 @@ from .dns import router as dns_router
 from .ssl import router as ssl_router
 from .services import router as services_router
 from .packages import router as packages_router
+from .mail import router as mail_router

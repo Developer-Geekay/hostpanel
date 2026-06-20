@@ -117,6 +117,18 @@ async def delete_user(username: str, remove_home: bool = True, current_user: Use
     await call_hooks("hostpanel.hooks.user_delete", username=username)
 
     try:
+        from modules.mail import db as mail_db, postfix, dovecot
+        mail_db.cascade_delete_owner(username)
+        postfix.rebuild(
+            [d["domain"] for d in mail_db.list_domains()],
+            mail_db.list_accounts(),
+            mail_db.list_aliases(),
+        )
+        dovecot.rebuild(mail_db.list_accounts())
+    except Exception as _e:
+        logger.warning(f"Mail cascade for deleted user {username} failed: {_e}")
+
+    try:
         ftp_users.disable_ftp(username)
     except Exception:
         pass

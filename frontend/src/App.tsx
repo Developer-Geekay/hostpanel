@@ -17,6 +17,7 @@ const Ssl       = lazy(() => import('./features/ssl/Ssl'));
 const Services  = lazy(() => import('./features/services/Services'));
 const Packages  = lazy(() => import('./features/packages/Packages'));
 const AuditLog  = lazy(() => import('./features/audit/AuditLog'));
+const Mail      = lazy(() => import('./features/mail/Mail'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -49,6 +50,7 @@ function AppRoutes() {
         <Route path="ssh"       element={<AdminRoute><S><Ssh /></S></AdminRoute>} />
         <Route path="ssl"       element={<AdminRoute><S><Ssl /></S></AdminRoute>} />
         <Route path="audit"     element={<AdminRoute><S><AuditLog /></S></AdminRoute>} />
+        <Route path="mail"      element={<AdminRoute><S><Mail /></S></AdminRoute>} />
         <Route path="pkg/:slug" element={<PackageShell />} />
         <Route path=":slug"     element={<PackageShell />} />
       </Route>

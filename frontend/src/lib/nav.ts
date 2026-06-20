@@ -33,6 +33,7 @@ export const CORE_SECTIONS: NavSection[] = [
     items: [
       { route: 'users', label: 'Users', icon: 'people', adminOnly: true },
       { route: 'dns',   label: 'DNS',   icon: 'dns',    adminOnly: true },
+      { route: 'mail',  label: 'Mail',  icon: 'mail',   adminOnly: true },
     ],
   },
   {

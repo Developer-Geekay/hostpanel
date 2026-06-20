@@ -72,6 +72,17 @@ async def delete_zone(zone_name: str, current_user: User = Depends(require_admin
     domains = _load_domains()
     if any(d["domain_name"] == zone_name for d in domains):
         await call_hooks("hostpanel.hooks.domain_delete", domain=zone_name)
+        try:
+            from modules.mail import db as mail_db, postfix, dovecot
+            mail_db.cascade_delete_domain(zone_name)
+            postfix.rebuild(
+                [d["domain"] for d in mail_db.list_domains()],
+                mail_db.list_accounts(),
+                mail_db.list_aliases(),
+            )
+            dovecot.rebuild(mail_db.list_accounts())
+        except Exception as _e:
+            logger.warning(f"Mail cascade for deleted domain {zone_name} failed: {_e}")
         return {"message": f"Zone {zone_name} deleted along with all associated hosting resources"}
     return {"message": f"Zone {zone_name} deleted"}
 

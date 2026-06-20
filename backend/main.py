@@ -42,7 +42,8 @@ from routers import (
     dns_router,
     ssl_router,
     services_router,
-    packages_router
+    packages_router,
+    mail_router,
 )
 
 load_dotenv()
@@ -158,6 +159,7 @@ app.include_router(dns_router, dependencies=[Depends(get_current_user)])
 app.include_router(ssl_router, dependencies=[Depends(get_current_user)])
 app.include_router(services_router, dependencies=[Depends(get_current_user)])
 app.include_router(packages_router, dependencies=[Depends(get_current_user)])
+app.include_router(mail_router,     dependencies=[Depends(get_current_user)])
 
 # Dynamically load routers from installed plugins
 import importlib.metadata
