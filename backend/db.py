@@ -129,6 +129,16 @@ CREATE TABLE IF NOT EXISTS mail_aliases (
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_domain ON mail_accounts(domain);
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_owner  ON mail_accounts(owner);
 CREATE INDEX IF NOT EXISTS idx_mail_aliases_domain  ON mail_aliases(domain);
+
+CREATE TABLE IF NOT EXISTS wg_peers (
+    public_key  TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    allowed_ips TEXT,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    imported    INTEGER NOT NULL DEFAULT 0,
+    private_key TEXT,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
 """
 
 
@@ -154,7 +164,17 @@ def init_db():
     """Create schema and migrate JSON data on first run."""
     with get_conn() as conn:
         conn.executescript(_SCHEMA)
+    _add_columns()
     _migrate_json()
+
+
+def _add_columns():
+    """Add columns that were introduced after initial schema creation."""
+    with get_conn() as conn:
+        try:
+            conn.execute("ALTER TABLE wg_peers ADD COLUMN private_key TEXT")
+        except Exception:
+            pass  # column already exists
 
 
 # ── JSON → SQLite one-time migration ──────────────────────────────────────────
@@ -164,6 +184,7 @@ def _migrate_json():
     _migrate_domains()
     _migrate_subdomains()
     _migrate_mysql_databases()
+    _migrate_wg_peers()
 
 
 def _migrate_portal_users():
@@ -255,3 +276,34 @@ def _migrate_mysql_databases():
             logger.info(f"Migrated {len(dbs)} MySQL database record(s) from JSON → SQLite")
         except Exception as e:
             logger.error(f"mysql_databases JSON migration failed: {e}")
+
+
+def _migrate_wg_peers():
+    path = "/opt/hostpanel/plugins/wireguard/peers.json"
+    if not os.path.exists(path):
+        return
+    with get_conn() as conn:
+        if conn.execute("SELECT COUNT(*) FROM wg_peers").fetchone()[0] > 0:
+            os.remove(path)
+            return
+        try:
+            with open(path) as f:
+                raw = json.load(f)
+            count = 0
+            for pubkey, v in raw.items():
+                if isinstance(v, str):
+                    name, allowed_ips, enabled, imported_ = v, None, 1, 0
+                else:
+                    name = v.get("name", pubkey[:8])
+                    allowed_ips = v.get("allowed_ips")
+                    enabled = int(v.get("enabled", True))
+                    imported_ = int(v.get("imported", False))
+                conn.execute(
+                    "INSERT OR IGNORE INTO wg_peers (public_key, name, allowed_ips, enabled, imported) VALUES (?,?,?,?,?)",
+                    (pubkey, name, allowed_ips, enabled, imported_),
+                )
+                count += 1
+            logger.info(f"Migrated {count} WireGuard peer(s) from JSON → SQLite")
+            os.remove(path)
+        except Exception as e:
+            logger.error(f"wg_peers JSON migration failed: {e}")
