@@ -98,6 +98,8 @@ def _update_nginx_cpanel_vhost(root_domain: str, ssl_dir: str) -> None:
         internal;
     }}
 
+    client_max_body_size 50m;
+
     location / {{
         proxy_pass http://127.0.0.1:{panel_backend_port};
         proxy_set_header Host $host;
