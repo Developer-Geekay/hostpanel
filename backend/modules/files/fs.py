@@ -9,8 +9,35 @@ from typing import Optional
 from modules.files.exceptions import PathForbidden, PathNotFound, FileTooLarge, BinaryFile
 
 ALLOWED_ROOTS = ["/home", "/var/www", "/opt/hostpanel/plugins/nginx/vhosts", "/data"]
-MAX_READ_BYTES  = 1 * 1024 * 1024    # 1 MB
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_READ_BYTES = 1 * 1024 * 1024    # 1 MB
+_DEFAULT_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB fallback
+
+
+def _parse_nginx_size(value: str) -> int:
+    """Parse nginx-style size string (e.g. '50m', '1g', '500k') to bytes."""
+    v = value.strip().lower()
+    if v.endswith('g'):
+        return int(v[:-1]) * 1024 * 1024 * 1024
+    if v.endswith('m'):
+        return int(v[:-1]) * 1024 * 1024
+    if v.endswith('k'):
+        return int(v[:-1]) * 1024
+    return int(v)
+
+
+def _get_upload_limit() -> int:
+    """Read client_max_body_size from nginx_settings DB. Falls back to 50 MB."""
+    try:
+        from db import get_conn
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT value FROM nginx_settings WHERE key = 'client_max_body_size'"
+            ).fetchone()
+            if row:
+                return _parse_nginx_size(row["value"])
+    except Exception:
+        pass
+    return _DEFAULT_UPLOAD_BYTES
 
 
 def safe_path(path: str, linux_user: Optional[str] = None, role: str = "admin") -> Path:
@@ -145,8 +172,10 @@ def upload_file(dest_dir_path: str, filename: str, content: bytes,
     dest_dir = safe_path(dest_dir_path, linux_user, role)
     if not dest_dir.is_dir():
         raise PathNotFound("Destination is not a directory.")
-    if len(content) > MAX_UPLOAD_BYTES:
-        raise FileTooLarge("File exceeds 50 MB upload limit.")
+    max_bytes = _get_upload_limit()
+    if len(content) > max_bytes:
+        limit_mb = max_bytes // (1024 * 1024)
+        raise FileTooLarge(f"File exceeds {limit_mb} MB upload limit.")
     dest = dest_dir / filename
     safe_path(str(dest), linux_user, role)  # re-validate dest
     try:
