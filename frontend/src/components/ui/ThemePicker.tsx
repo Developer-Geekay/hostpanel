@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Palette, Check, X } from 'lucide-react';
 import { useTheme, THEMES, COLORS, ThemeKey, ColorKey, Theme } from '../../lib/theme';
 
@@ -10,10 +11,13 @@ export function ThemePicker({ compact }: ThemePickerProps) {
   const { theme, color, setTheme, setColor } = useTheme();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && ref.current.contains(e.target as Node)) return;
+      if (popupRef.current && popupRef.current.contains(e.target as Node)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -38,7 +42,7 @@ export function ThemePicker({ compact }: ThemePickerProps) {
           }} />
         </button>
         {open && (
-          <div className="animate-fade-in theme-popup open" style={{
+          <div ref={popupRef} className="animate-fade-in theme-popup open" style={{
             position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 300,
           }}>
             <div className="tp-header">
@@ -145,10 +149,10 @@ export function ThemePicker({ compact }: ThemePickerProps) {
         <Palette size={13} strokeWidth={1.5} color="var(--text-3)" />
       </button>
 
-      {open && (
+      {open && createPortal(
         <>
           <div className="theme-popup-overlay open" onClick={() => setOpen(false)} />
-          <div className="theme-popup open" style={{ left: '228px', top: '12px' }}>
+          <div ref={popupRef} className="theme-popup open" style={{ left: '228px', top: '12px' }}>
             <div className="tp-header">
               <span className="tp-title">Appearance</span>
               <button
@@ -229,7 +233,8 @@ export function ThemePicker({ compact }: ThemePickerProps) {
               </div>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
