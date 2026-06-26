@@ -2,12 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Cpu, MemoryStick, HardDrive, Clock, AlertTriangle,
-  Globe, Mail, Shield, Hexagon, Package, FolderOpen,
-  RefreshCw, Terminal, CheckCircle2, XCircle, Play, StopCircle
+  RefreshCw
 } from 'lucide-react';
-import { usePlugins } from '../../lib/plugins';
+import { usePlugins, DashboardBlock } from '../../lib/plugins';
 import { useDashboard } from './hooks/useDashboard';
-import { useAuth } from '../../lib/auth';
 import { apiGet } from '../../lib/api';
 import type { Service } from '../services/types';
 import type { AuditEntry } from '../audit/types';
@@ -49,10 +47,37 @@ function timeAgo(ts: string): string {
   }
 }
 
+function PackageStatChip({ block }: { block: DashboardBlock }) {
+  const [data, setData] = useState<any>(null);
+
+  useEffect(() => {
+    if (!block.endpoint) return;
+    apiGet<any>(block.endpoint)
+      .then(setData)
+      .catch(() => {});
+  }, [block.endpoint]);
+
+  const count = data ? (data.count !== undefined ? data.count : data.value ?? '0') : '…';
+
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: '8px',
+      background: 'var(--surface2, var(--bg-3))', border: '1px solid var(--border2, var(--border))',
+      borderRadius: '20px', padding: '6px 14px', fontSize: '12px', color: 'var(--text-2)'
+    }}>
+      <span style={{ fontWeight: 600, fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--text-3)' }}>
+        {block.label}:
+      </span>
+      <span className="chip chip-accent" style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
+        {count}
+      </span>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { dashboardBlocks } = usePlugins();
   const { stats, connected, lastUpdated } = useDashboard();
-  const { isAdmin } = useAuth();
 
   const [services, setServices] = useState<Service[]>([]);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
@@ -106,6 +131,9 @@ export default function Dashboard() {
     return <PageSpinner />;
   }
 
+  const statBlocks = dashboardBlocks.filter(b => b.type === 'stat');
+  const otherBlocks = dashboardBlocks.filter(b => b.type !== 'stat');
+
   return (
     <div className="page">
       {/* Topbar */}
@@ -146,6 +174,47 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* System Information - NOW ON TOP */}
+        <div className="card" style={{ padding: '14px 16px', marginBottom: '14px' }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '12px' }}>
+            System Information
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
+            <div>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', marginBottom: '2px' }}>Hostname</div>
+              <div className="mono" style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text)' }}>{stats?.hostname || 'localhost'}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', marginBottom: '2px' }}>OS</div>
+              <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text)' }}>{stats?.os || 'Linux'}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', marginBottom: '2px' }}>Kernel</div>
+              <div className="mono" style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-2)' }}>{stats?.kernel || '—'}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', marginBottom: '2px' }}>Load Average</div>
+              <div className="mono" style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text)' }}>
+                {stats?.load_avg ? stats.load_avg.join(', ') : '0.00, 0.00, 0.00'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Packages Chip-Style Info (In place of Quick Actions) */}
+        {statBlocks.length > 0 && (
+          <div className="card" style={{ padding: '14px 16px', marginBottom: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '12px' }}>
+              Packages Summary
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+              {statBlocks.map(block => (
+                <PackageStatChip key={`${block.slug}-${block.label}`} block={block} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 4-Column Stat Grid */}
         {stats && (
           <div className="stat-grid-4" style={{ marginBottom: '14px' }}>
@@ -181,183 +250,86 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Quick Actions Card */}
-        <div className="card" style={{ padding: '14px 16px', marginBottom: '14px' }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '12px' }}>
-            Quick Actions
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
-            <Link to="/app/dns" className="quick-action-link" style={{ background: 'var(--surface2, var(--bg-3))', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px 8px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.12s', textDecoration: 'none', display: 'block' }}>
-              <Globe size={18} style={{ strokeWidth: 1.5, color: 'var(--text-3)', marginBottom: '7px' }} />
-              <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Add DNS</div>
-            </Link>
-            <Link to="/app/mail" className="quick-action-link" style={{ background: 'var(--surface2, var(--bg-3))', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px 8px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.12s', textDecoration: 'none', display: 'block' }}>
-              <Mail size={18} style={{ strokeWidth: 1.5, color: 'var(--text-3)', marginBottom: '7px' }} />
-              <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Mail Account</div>
-            </Link>
-            <Link to="/app/ssl" className="quick-action-link" style={{ background: 'var(--surface2, var(--bg-3))', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px 8px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.12s', textDecoration: 'none', display: 'block' }}>
-              <Shield size={18} style={{ strokeWidth: 1.5, color: 'var(--text-3)', marginBottom: '7px' }} />
-              <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Issue SSL</div>
-            </Link>
-            <Link to="/app/pkg/nodejs" className="quick-action-link" style={{ background: 'var(--surface2, var(--bg-3))', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px 8px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.12s', textDecoration: 'none', display: 'block' }}>
-              <Hexagon size={18} style={{ strokeWidth: 1.5, color: 'var(--text-3)', marginBottom: '7px' }} />
-              <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Deploy App</div>
-            </Link>
-            <Link to="/app/packages" className="quick-action-link" style={{ background: 'var(--surface2, var(--bg-3))', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px 8px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.12s', textDecoration: 'none', display: 'block' }}>
-              <Package size={18} style={{ strokeWidth: 1.5, color: 'var(--text-3)', marginBottom: '7px' }} />
-              <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Packages</div>
-            </Link>
-            <Link to="/app/pkg/filemanager" className="quick-action-link" style={{ background: 'var(--surface2, var(--bg-3))', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px 8px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.12s', textDecoration: 'none', display: 'block' }}>
-              <FolderOpen size={18} style={{ strokeWidth: 1.5, color: 'var(--text-3)', marginBottom: '7px' }} />
-              <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Files</div>
-            </Link>
-          </div>
-        </div>
-
-        {/* Split Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '12px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* Service Status */}
-            <div className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '13px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>Service Status</span>
-                <Link to="/app/services" style={{ fontSize: '11px', color: 'var(--text-3)', textDecoration: 'none' }}>
-                  View all →
-                </Link>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                {services.length === 0 ? (
-                  <div style={{ fontSize: '12.5px', color: 'var(--text-3)', padding: '10px 0' }}>No services available</div>
-                ) : (
-                  services.map(s => {
-                    const isRunning = s.status === 'running' || s.status === 'active';
-                    const isWarning = s.status === 'warning' || s.status === 'degraded';
-                    const dotColor = isRunning ? 'var(--green)' : isWarning ? 'var(--amber)' : 'var(--red)';
-                    const chipClass = isRunning ? 'chip-green' : isWarning ? 'chip-amber' : 'chip-red';
-
-                    return (
-                      <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0' }}>
-                        <span style={{
-                          width: '6px', height: '6px', borderRadius: '50%',
-                          background: dotColor, flexShrink: 0,
-                          boxShadow: `0 0 5px ${dotColor}`
-                        }} />
-                        <span style={{ fontSize: '12.5px', color: 'var(--text-2)', flex: 1 }}>{s.label || s.name}</span>
-                        <span className="mono" style={{ fontSize: '10.5px', color: 'var(--text-3)' }}>{s.unit}</span>
-                        <span className={`chip ${chipClass}`}>{s.status}</span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+        {/* Services Status & Recent Activity (grid-2 left/right, stacks on mobile) */}
+        <div className="grid-2" style={{ marginBottom: '14px' }}>
+          {/* Service Status */}
+          <div className="card" style={{ padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '13px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>Service Status</span>
+              <Link to="/app/services" style={{ fontSize: '11px', color: 'var(--text-3)', textDecoration: 'none' }}>
+                View all →
+              </Link>
             </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {services.length === 0 ? (
+                <div style={{ fontSize: '12.5px', color: 'var(--text-3)', padding: '10px 0' }}>No services available</div>
+              ) : (
+                services.map(s => {
+                  const isRunning = s.status === 'running' || s.status === 'active';
+                  const isWarning = s.status === 'warning' || s.status === 'degraded';
+                  const dotColor = isRunning ? 'var(--green)' : isWarning ? 'var(--amber)' : 'var(--red)';
+                  const chipClass = isRunning ? 'chip-green' : isWarning ? 'chip-amber' : 'chip-red';
 
-            {/* Recent Activity */}
-            <div className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>Recent Activity</span>
-                <Link to="/app/audit" style={{ fontSize: '11px', color: 'var(--text-3)', textDecoration: 'none' }}>
-                  Audit log →
-                </Link>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {auditLog.length === 0 ? (
-                  <div style={{ fontSize: '12.5px', color: 'var(--text-3)', padding: '10px 0' }}>No recent activity</div>
-                ) : (
-                  auditLog.map((e, idx) => {
-                    const isSuccess = e.status === 'ok';
-                    const dotColor = isSuccess ? 'var(--green)' : 'var(--red)';
-                    const actionClass = e.action.split('.')[0];
-                    const actionColor = actionClass === 'ssl' ? 'var(--amber)' : actionClass === 'service' ? 'var(--green)' : actionClass === 'user' ? 'var(--accent)' : 'var(--blue)';
+                  return (
+                    <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0' }}>
+                      <span style={{
+                        width: '6px', height: '6px', borderRadius: '50%',
+                        background: dotColor, flexShrink: 0,
+                        boxShadow: `0 0 5px ${dotColor}`
+                      }} />
+                      <span style={{ fontSize: '12.5px', color: 'var(--text-2)', flex: 1 }}>{s.label || s.name}</span>
+                      <span className="mono" style={{ fontSize: '10.5px', color: 'var(--text-3)' }}>{s.unit}</span>
+                      <span className={`chip ${chipClass}`}>{s.status}</span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
 
-                    return (
-                      <div key={e.id} className="log-row" style={{ display: 'flex', gap: '10px', padding: '9px 0', borderBottom: idx === auditLog.length - 1 ? 'none' : '1px solid var(--border)', alignItems: 'flex-start' }}>
-                        <div className="log-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, marginTop: '5px', background: dotColor }} />
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: '12.5px', color: 'var(--text-2)' }}>
-                            <span style={{ fontWeight: 600, color: actionColor, marginRight: '4px' }}>{e.action}</span>
-                            {e.resource && <span>on <span className="mono" style={{ fontSize: '11.5px' }}>{e.resource}</span></span>}
-                            {e.detail && <span style={{ color: 'var(--text-3)', marginLeft: '6px' }}>— {e.detail}</span>}
-                          </div>
-                          <div className="mono" style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '2px' }}>
-                            {timeAgo(e.ts)} · {e.actor}
-                          </div>
+          {/* Recent Activity */}
+          <div className="card" style={{ padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>Recent Activity</span>
+              <Link to="/app/audit" style={{ fontSize: '11px', color: 'var(--text-3)', textDecoration: 'none' }}>
+                Audit log →
+              </Link>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {auditLog.length === 0 ? (
+                <div style={{ fontSize: '12.5px', color: 'var(--text-3)', padding: '10px 0' }}>No recent activity</div>
+              ) : (
+                auditLog.map((e, idx) => {
+                  const isSuccess = e.status === 'ok';
+                  const dotColor = isSuccess ? 'var(--green)' : 'var(--red)';
+                  const actionClass = e.action.split('.')[0];
+                  const actionColor = actionClass === 'ssl' ? 'var(--amber)' : actionClass === 'service' ? 'var(--green)' : actionClass === 'user' ? 'var(--accent)' : 'var(--blue)';
+
+                  return (
+                    <div key={e.id} className="log-row" style={{ display: 'flex', gap: '10px', padding: '9px 0', borderBottom: idx === auditLog.length - 1 ? 'none' : '1px solid var(--border)', alignItems: 'flex-start' }}>
+                      <div className="log-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, marginTop: '5px', background: dotColor }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '12.5px', color: 'var(--text-2)' }}>
+                          <span style={{ fontWeight: 600, color: actionColor, marginRight: '4px' }}>{e.action}</span>
+                          {e.resource && <span>on <span className="mono" style={{ fontSize: '11.5px' }}>{e.resource}</span></span>}
+                          {e.detail && <span style={{ color: 'var(--text-3)', marginLeft: '6px' }}>— {e.detail}</span>}
+                        </div>
+                        <div className="mono" style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '2px' }}>
+                          {timeAgo(e.ts)} · {e.actor}
                         </div>
                       </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* SSL Certificates */}
-            <div className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>SSL Certificates</span>
-                <Link to="/app/ssl" style={{ fontSize: '11px', color: 'var(--text-3)', textDecoration: 'none' }}>
-                  Manage →
-                </Link>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {certs.length === 0 ? (
-                  <div style={{ fontSize: '12.5px', color: 'var(--text-3)', padding: '10px 0' }}>No SSL certificates</div>
-                ) : (
-                  certs.map(c => {
-                    const days = c.days_remaining;
-                    const isExpiring = days !== null && days <= 7;
-                    const isExpired = days !== null && days <= 0;
-                    const chipClass = isExpired ? 'chip-red' : isExpiring ? 'chip-amber' : 'chip-green';
-                    const textLabel = isExpired ? 'Expired' : isExpiring ? `${days}d left` : `${days}d`;
-
-                    return (
-                      <div key={c.root_domain} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 0' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text)' }}>{c.root_domain}</div>
-                          <div style={{ fontSize: '10.5px', color: 'var(--text-3)' }}>{c.domains.length} domain{c.domains.length > 1 ? 's' : ''}</div>
-                        </div>
-                        <span className={`chip ${chipClass}`}>{textLabel}</span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* System Info */}
-            <div className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '12px' }}>
-                System Info
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', marginBottom: '2px' }}>Hostname</div>
-                  <div className="mono" style={{ fontSize: '11.5px', color: 'var(--text)' }}>{stats?.hostname || 'localhost'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', marginBottom: '2px' }}>OS</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text)' }}>{stats?.os || 'Linux'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', marginBottom: '2px' }}>Kernel</div>
-                  <div className="mono" style={{ fontSize: '11px', color: 'var(--text-2)' }}>{stats?.kernel || '—'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', marginBottom: '2px' }}>Load avg</div>
-                  <div className="mono" style={{ fontSize: '11.5px', color: 'var(--text)' }}>
-                    {stats?.load_avg ? stats.load_avg.join(', ') : '0.00, 0.00, 0.00'}
-                  </div>
-                </div>
-              </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
 
-        {/* Plugin injected dashboard blocks */}
-        {dashboardBlocks.length > 0 && (
+        {/* Large widget blocks from packages if they exist */}
+        {otherBlocks.length > 0 && (
           <div style={{ marginTop: '16px' }}>
-            <DashboardBlocks blocks={dashboardBlocks} />
+            <DashboardBlocks blocks={otherBlocks} />
           </div>
         )}
       </div>
