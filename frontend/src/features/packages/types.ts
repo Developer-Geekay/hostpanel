@@ -1,3 +1,13 @@
+export interface RawNavItem {
+  nav_route: string;
+  nav_label: string;
+  nav_icon?: string;
+  nav_section?: string;
+  nav_section_label?: string;
+  nav_section_order?: number;
+  admin_only?: boolean;
+}
+
 export interface PackageItem {
   name: string;
   version: string;
@@ -5,7 +15,7 @@ export interface PackageItem {
   compatible: boolean;
   needs_provisioning?: boolean;
   service?: string | { name: string; unit: string };
-  nav_items?: string[];
+  nav_items?: RawNavItem[];
   source_type?: 'github_zip' | 'pypi' | 'upload' | null;
   source?: string | null;
 }

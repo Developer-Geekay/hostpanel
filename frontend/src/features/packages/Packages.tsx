@@ -405,8 +405,8 @@ export default function Packages() {
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           {p.updateTarget.nav_items.map(item => (
-                            <span key={item} className="badge badge-dim" style={{ fontSize: '11px', fontFamily: 'var(--font-ui)' }}>
-                              {item}
+                            <span key={item.nav_route} className="badge badge-dim" style={{ fontSize: '11px', fontFamily: 'var(--font-ui)' }}>
+                              {item.nav_label}
                             </span>
                           ))}
                         </div>
