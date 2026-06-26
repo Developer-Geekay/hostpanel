@@ -141,7 +141,7 @@ function ThemePanel({
               <span style={{
                 position: 'absolute', bottom: 3, right: 3,
                 width: 14, height: 10, borderRadius: 2,
-                background: t.preview.card,
+                background: t.preview.surface,
                 border: '0.5px solid rgba(128,128,128,0.2)',
               }} />
             </span>
