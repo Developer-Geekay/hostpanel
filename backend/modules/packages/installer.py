@@ -147,7 +147,8 @@ def _install_sudoers(extract_dir: str, logs: list, is_update: bool = False) -> N
         src = os.path.join(sudoers_dir, fname)
         if os.path.getsize(src) == 0:
             continue
-        v = subprocess.run(["sudo", "visudo", "-c", "-f", src], capture_output=True, text=True)
+        v = subprocess.run(["sudo", "/usr/sbin/visudo", "-c", "-f", src], capture_output=True, text=True)
+        _log.info(f"visudo check on {fname}: returncode={v.returncode}, stdout={v.stdout.strip()}, stderr={v.stderr.strip()}")
         if v.returncode == 0:
             content = open(src).read()
             subprocess.run(["sudo", "tee", f"/etc/sudoers.d/{fname}"],
