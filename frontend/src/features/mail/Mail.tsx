@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Mail as MailIcon, Plus, Trash2, KeyRound, AlertTriangle, Eye, EyeOff, RefreshCw, Wifi, Copy, Check } from 'lucide-react';
+import {
+  Mail as MailIcon, Plus, Trash2, KeyRound, AlertTriangle, Eye, EyeOff,
+  RefreshCw, Wifi, Copy, Check, ChevronRight, HardDrive, Settings, X, Globe, Search
+} from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { PageSpinner } from '../../components/ui/Spinner';
+import { Toggle } from '../../components/ui/Toggle';
 import { useToast } from '../../components/ui/Toast';
 import { apiGet, apiPost, apiDelete } from '../../lib/api';
 
@@ -11,7 +15,7 @@ import { apiGet, apiPost, apiDelete } from '../../lib/api';
 interface MailAccount { email: string; domain: string; owner: string; quota_mb: number; created_at: string; }
 interface MailAlias   { alias: string; target: string; domain: string; owner: string; created_at: string; }
 
-type Tab = 'accounts' | 'forwarders';
+type DetailTab = 'mailboxes' | 'forwarders' | 'dkim';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -19,24 +23,6 @@ function genPassword(len = 16): string {
   const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';
   return Array.from(crypto.getRandomValues(new Uint8Array(len)))
     .map(b => chars[b % chars.length]).join('');
-}
-
-// ── Tab bar ────────────────────────────────────────────────────────────────────
-
-function TabBar({ tab, onChange }: { tab: Tab; onChange(t: Tab): void }) {
-  const labels: Record<Tab, string> = { accounts: 'Accounts', forwarders: 'Forwarders' };
-  return (
-    <div style={{ display: 'flex', gap: 3 }}>
-      {(['accounts', 'forwarders'] as Tab[]).map(t => (
-        <button key={t} onClick={() => onChange(t)} style={{
-          padding: '5px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-          background: tab === t ? 'var(--accent-dim)' : 'transparent',
-          color: tab === t ? 'var(--accent)' : 'var(--text-2)',
-          cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-ui)', transition: 'all var(--transition)',
-        }}>{labels[t]}</button>
-      ))}
-    </div>
-  );
 }
 
 // ── Setup banner ───────────────────────────────────────────────────────────────
@@ -62,61 +48,14 @@ function SetupBanner({ onSetup }: { onSetup(): Promise<void> }) {
   );
 }
 
-// ── Split email input ──────────────────────────────────────────────────────────
-
-function EmailInput({
-  username, domain, domains, onUsername, onDomain,
-}: {
-  username: string; domain: string; domains: string[];
-  onUsername(v: string): void; onDomain(v: string): void;
-}) {
-  return (
-    <div style={{
-      display: 'flex', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-      overflow: 'hidden', background: 'var(--input-bg, var(--surface-2))',
-    }}>
-      <input
-        value={username}
-        onChange={e => onUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._+-]/g, ''))}
-        placeholder="username"
-        autoFocus
-        style={{
-          flex: 1, border: 'none', background: 'transparent', outline: 'none',
-          padding: '7px 10px', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font-mono)',
-          minWidth: 0,
-        }}
-      />
-      <div style={{
-        display: 'flex', alignItems: 'center',
-        borderLeft: '1px solid var(--border)', background: 'var(--surface-3, var(--surface-2))',
-        paddingLeft: 2,
-      }}>
-        <span style={{ fontSize: 13, color: 'var(--text-2)', padding: '0 4px 0 8px', userSelect: 'none' }}>@</span>
-        <select
-          value={domain}
-          onChange={e => onDomain(e.target.value)}
-          style={{
-            border: 'none', background: 'transparent', outline: 'none',
-            padding: '7px 10px 7px 2px', fontSize: 13, color: 'var(--text)',
-            cursor: 'pointer', fontFamily: 'var(--font-mono)',
-          }}
-        >
-          {domains.length === 0 && <option value="">No domains</option>}
-          {domains.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-      </div>
-    </div>
-  );
-}
-
 // ── Password input with show/hide + generate ───────────────────────────────────
 
 function PasswordInput({ value, onChange }: { value: string; onChange(v: string): void }) {
   const [show, setShow] = useState(false);
   return (
     <div style={{
-      display: 'flex', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-      overflow: 'hidden', background: 'var(--input-bg, var(--surface-2))',
+      display: 'flex', border: '1px solid var(--border)', borderRadius: '6px',
+      overflow: 'hidden', background: 'var(--surface, var(--bg-2))',
     }}>
       <input
         type={show ? 'text' : 'password'}
@@ -130,14 +69,14 @@ function PasswordInput({ value, onChange }: { value: string; onChange(v: string)
       />
       <button type="button" onClick={() => setShow(s => !s)} title={show ? 'Hide' : 'Show'} style={{
         border: 'none', background: 'transparent', cursor: 'pointer',
-        padding: '0 8px', color: 'var(--text-2)', display: 'flex', alignItems: 'center',
+        padding: '0 8px', color: 'var(--text-3)', display: 'flex', alignItems: 'center',
         borderLeft: '1px solid var(--border)',
       }}>
         {show ? <EyeOff size={14} /> : <Eye size={14} />}
       </button>
       <button type="button" onClick={() => onChange(genPassword())} title="Generate password" style={{
         border: 'none', background: 'transparent', cursor: 'pointer',
-        padding: '0 8px', color: 'var(--text-2)', display: 'flex', alignItems: 'center',
+        padding: '0 8px', color: 'var(--text-3)', display: 'flex', alignItems: 'center',
         borderLeft: '1px solid var(--border)', fontSize: 11, gap: 4,
         whiteSpace: 'nowrap',
       }}>
@@ -235,7 +174,6 @@ function ProtocolCard({ title, icon, accentBg, accentColor, rows }: {
 function ClientSetupModal({ email, onClose }: { email: string; onClose(): void }) {
   const domain = email.split('@')[1] ?? '';
   const server = `mail.${domain}`;
-
   const clients = ['Thunderbird', 'Apple Mail', 'Outlook', 'Gmail', 'iOS Mail', 'Android'];
 
   return (
@@ -246,8 +184,6 @@ function ClientSetupModal({ email, onClose }: { email: string; onClose(): void }
         </div>
       }>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-        {/* Email badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <MailIcon size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
           <span style={{
@@ -255,8 +191,7 @@ function ClientSetupModal({ email, onClose }: { email: string; onClose(): void }
           }}>{email}</span>
         </div>
 
-        {/* Two protocol cards side by side */}
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <ProtocolCard
             title="Incoming (IMAP)"
             icon={<Wifi size={14} />}
@@ -300,7 +235,6 @@ function ClientSetupModal({ email, onClose }: { email: string; onClose(): void }
           />
         </div>
 
-        {/* Compatible clients */}
         <div style={{
           padding: '10px 12px', background: 'var(--surface-2)',
           borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
@@ -323,41 +257,59 @@ function ClientSetupModal({ email, onClose }: { email: string; onClose(): void }
   );
 }
 
-// ── Main component ─────────────────────────────────────────────────────────────
+// ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function Mail() {
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>('accounts');
+  
+  // Tabs in right pane
+  const [activeTab, setActiveTab] = useState<DetailTab>('mailboxes');
+
+  // Domains & Configured Status
   const [configured, setConfigured] = useState<boolean | null>(null);
-
-  // DNS domains for dropdowns
+  const [mailDomains, setMailDomains] = useState<{ domain: string; owner: string; created_at: string }[]>([]);
+  const [mailDomainsLoading, setMailDomainsLoading] = useState(true);
   const [dnsDomains, setDnsDomains] = useState<string[]>([]);
+  
+  // Selection
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  const [filter, setFilter] = useState('');
+  
+  // Inline add domain mode
+  const [isAddingDomain, setIsAddingDomain] = useState(false);
+  const [selectedDnsDomain, setSelectedDnsDomain] = useState('');
+  const [savingDomain, setSavingDomain] = useState(false);
+  const [deleteDomainTarget, setDeleteDomainTarget] = useState<string | null>(null);
+  const [deletingDomain, setDeletingDomain] = useState(false);
 
-  // accounts
-  const [accounts,        setAccounts]        = useState<MailAccount[]>([]);
+  // Accounts
+  const [accounts, setAccounts] = useState<MailAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
-  const [addAccountOpen,  setAddAccountOpen]  = useState(false);
-  const [accUsername,     setAccUsername]     = useState('');
-  const [accDomain,       setAccDomain]       = useState('');
-  const [accPassword,     setAccPassword]     = useState('');
-  const [accQuota,        setAccQuota]        = useState(2048);
-  const [showQuota,       setShowQuota]       = useState(false);
-  const [savingAccount,   setSavingAccount]   = useState(false);
-  const [deleteAccount,   setDeleteAccount]   = useState('');
-  const [setupEmail,      setSetupEmail]      = useState('');
-  const [pwdTarget,       setPwdTarget]       = useState('');
-  const [newPwd,          setNewPwd]          = useState('');
-  const [savingPwd,       setSavingPwd]       = useState(false);
+  const [addAccountOpen, setAddAccountOpen] = useState(false); // Used to toggle inline mailbox adder
+  const [accUsername, setAccUsername] = useState('');
+  const [accPassword, setAccPassword] = useState('');
+  const [accQuota, setAccQuota] = useState(2048);
+  const [showQuota, setShowQuota] = useState(false);
+  const [savingAccount, setSavingAccount] = useState(false);
+  const [deleteAccount, setDeleteAccount] = useState('');
+  const [setupEmail, setSetupEmail] = useState('');
+  
+  // Password updates
+  const [pwdTarget, setPwdTarget] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [savingPwd, setSavingPwd] = useState(false);
 
-  // forwarders
-  const [aliases,        setAliases]        = useState<MailAlias[]>([]);
+  // Aliases (Forwarders)
+  const [aliases, setAliases] = useState<MailAlias[]>([]);
   const [aliasesLoading, setAliasesLoading] = useState(false);
-  const [addAliasOpen,   setAddAliasOpen]   = useState(false);
-  const [aliasUsername,  setAliasUsername]  = useState('');
-  const [aliasDomain,    setAliasDomain]    = useState('');
-  const [aliasTarget,    setAliasTarget]    = useState('');
-  const [savingAlias,    setSavingAlias]    = useState(false);
-  const [deleteAlias,    setDeleteAlias]    = useState('');
+  const [addAliasOpen, setAddAliasOpen] = useState(false); // Used to toggle inline forwarder adder
+  const [aliasUsername, setAliasUsername] = useState('');
+  const [aliasTarget, setAliasTarget] = useState('');
+  const [savingAlias, setSavingAlias] = useState(false);
+  const [deleteAlias, setDeleteAlias] = useState('');
+
+  // DKIM Regeneration
+  const [refreshingDkim, setRefreshingDkim] = useState(false);
 
   // ── Loaders ──────────────────────────────────────────────────────────────────
 
@@ -368,32 +320,54 @@ export default function Mail() {
     } catch { setConfigured(false); }
   }, []);
 
-const loadDnsDomains = useCallback(async () => {
+  const loadMailDomains = useCallback(async () => {
+    setMailDomainsLoading(true);
+    try {
+      const data = await apiGet<{ domains: { domain: string; owner: string; created_at: string }[] }>('mail/domains');
+      setMailDomains(data.domains || []);
+    } catch (e) {
+      toast.err('Failed to load mail domains');
+    } finally {
+      setMailDomainsLoading(false);
+    }
+  }, [toast]);
+
+  const loadDnsDomains = useCallback(async () => {
     try {
       const r = await apiGet<{ domains: string[] }>('mail/available-domains');
-      setDnsDomains(r.domains);
-      if (r.domains.length && !accDomain) setAccDomain(r.domains[0]);
-      if (r.domains.length && !aliasDomain) setAliasDomain(r.domains[0]);
+      setDnsDomains(r.domains || []);
+      if (r.domains.length && !selectedDnsDomain) setSelectedDnsDomain(r.domains[0]);
     } catch { /* silent */ }
-  }, [accDomain, aliasDomain]);
+  }, [selectedDnsDomain]);
 
   const loadAccounts = useCallback(async () => {
     setAccountsLoading(true);
-    try { setAccounts((await apiGet<{ accounts: MailAccount[] }>('mail/accounts')).accounts); }
+    try { setAccounts((await apiGet<{ accounts: MailAccount[] }>('mail/accounts')).accounts || []); }
     catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to load accounts'); }
     finally { setAccountsLoading(false); }
   }, [toast]);
 
   const loadAliases = useCallback(async () => {
     setAliasesLoading(true);
-    try { setAliases((await apiGet<{ aliases: MailAlias[] }>('mail/aliases')).aliases); }
+    try { setAliases((await apiGet<{ aliases: MailAlias[] }>('mail/aliases')).aliases || []); }
     catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to load aliases'); }
     finally { setAliasesLoading(false); }
   }, [toast]);
 
-  useEffect(() => { checkConfigured(); loadDnsDomains(); }, [checkConfigured, loadDnsDomains]);
-  useEffect(() => { if (tab === 'accounts')   loadAccounts(); }, [tab, loadAccounts]);
-  useEffect(() => { if (tab === 'forwarders') loadAliases();  }, [tab, loadAliases]);
+  useEffect(() => {
+    checkConfigured();
+    loadMailDomains();
+    loadDnsDomains();
+    loadAccounts();
+    loadAliases();
+  }, [checkConfigured, loadMailDomains, loadDnsDomains, loadAccounts, loadAliases]);
+
+  // Select first domain when list loads
+  useEffect(() => {
+    if (mailDomains.length > 0 && !selectedDomain) {
+      setSelectedDomain(mailDomains[0].domain);
+    }
+  }, [mailDomains, selectedDomain]);
 
   // ── Setup ──────────────────────────────────────────────────────────────────────
 
@@ -405,307 +379,764 @@ const loadDnsDomains = useCallback(async () => {
     } catch (e) { toast.err(e instanceof Error ? e.message : 'Setup failed'); }
   }
 
-  // ── Open account modal ────────────────────────────────────────────────────────
+  // ── Domain Actions ────────────────────────────────────────────────────────────
 
-  function openAddAccount() {
-    setAccUsername(''); setAccPassword(''); setAccQuota(2048); setShowQuota(false);
-    if (dnsDomains.length) setAccDomain(dnsDomains[0]);
-    loadDnsDomains();
-    setAddAccountOpen(true);
-  }
+  const handleAddDomain = async () => {
+    if (!selectedDnsDomain) return toast.err('Select a domain');
+    setSavingDomain(true);
+    try {
+      await apiPost('mail/domains', { domain: selectedDnsDomain });
+      toast.ok(`Domain ${selectedDnsDomain} configured for email`);
+      setIsAddingDomain(false);
+      loadMailDomains();
+      setSelectedDomain(selectedDnsDomain);
+    } catch (e) {
+      toast.err(e instanceof Error ? e.message : 'Failed to add mail domain');
+    } finally {
+      setSavingDomain(false);
+    }
+  };
 
-  // ── Account actions ───────────────────────────────────────────────────────────
+  const handleDeleteDomain = async () => {
+    if (!deleteDomainTarget) return;
+    setDeletingDomain(true);
+    try {
+      await apiDelete(`mail/domains/${encodeURIComponent(deleteDomainTarget)}`);
+      toast.ok(`Domain ${deleteDomainTarget} deleted`);
+      setDeleteDomainTarget(null);
+      setSelectedDomain(null);
+      loadMailDomains();
+    } catch (e) {
+      toast.err(e instanceof Error ? e.message : 'Failed to delete domain');
+    } finally {
+      setDeletingDomain(false);
+    }
+  };
 
-  async function addAccount() {
+  const handleRefreshDkim = async () => {
+    if (!selectedDomain) return;
+    setRefreshingDkim(true);
+    try {
+      await apiPost(`mail/domains/${selectedDomain}/refresh-dkim`, {});
+      toast.ok(`DKIM keys regenerated for ${selectedDomain}`);
+    } catch (e) {
+      toast.err(e instanceof Error ? e.message : 'Failed to refresh DKIM');
+    } finally {
+      setRefreshingDkim(false);
+    }
+  };
+
+  // ── Account Actions ───────────────────────────────────────────────────────────
+
+  const handleAddAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!accUsername.trim()) return toast.err('Enter a username');
-    if (!accDomain)          return toast.err('Select a domain');
+    if (!selectedDomain) return toast.err('Select a domain');
     if (accPassword.length < 8) return toast.err('Password must be at least 8 characters');
     setSavingAccount(true);
     try {
-      const email = `${accUsername.trim()}@${accDomain}`;
+      const email = `${accUsername.trim()}@${selectedDomain}`;
       await apiPost('mail/accounts', { email, password: accPassword, quota_mb: accQuota });
       toast.ok(`Account ${email} created`);
-      setAddAccountOpen(false); loadAccounts();
-    } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to create account'); }
-    finally { setSavingAccount(false); }
-  }
+      setAddAccountOpen(false);
+      setAccUsername('');
+      setAccPassword('');
+      loadAccounts();
+    } catch (e) {
+      toast.err(e instanceof Error ? e.message : 'Failed to create account');
+    } finally {
+      setSavingAccount(false);
+    }
+  };
 
-  async function confirmDeleteAccount() {
+  const confirmDeleteAccount = async () => {
     try {
       await apiDelete(`mail/accounts/${encodeURIComponent(deleteAccount)}`);
       toast.ok(`Account ${deleteAccount} deleted`);
-      setDeleteAccount(''); loadAccounts();
-    } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to delete account'); }
-  }
+      setDeleteAccount('');
+      loadAccounts();
+    } catch (e) {
+      toast.err(e instanceof Error ? e.message : 'Failed to delete account');
+    }
+  };
 
-  async function changePassword() {
+  const changePassword = async () => {
     setSavingPwd(true);
     try {
       await apiPost(`mail/accounts/${encodeURIComponent(pwdTarget)}/password`, { password: newPwd });
-      toast.ok('Password updated'); setPwdTarget(''); setNewPwd('');
-    } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to update password'); }
-    finally { setSavingPwd(false); }
-  }
+      toast.ok('Password updated');
+      setPwdTarget('');
+      setNewPwd('');
+    } catch (e) {
+      toast.err(e instanceof Error ? e.message : 'Failed to update password');
+    } finally {
+      setSavingPwd(false);
+    }
+  };
 
-  // ── Alias actions ─────────────────────────────────────────────────────────────
+  // ── Alias Actions ─────────────────────────────────────────────────────────────
 
-  function openAddAlias() {
-    setAliasUsername(''); setAliasTarget('');
-    if (dnsDomains.length) setAliasDomain(dnsDomains[0]);
-    loadDnsDomains();
-    setAddAliasOpen(true);
-  }
-
-  async function addAlias() {
-    if (!aliasUsername.trim()) return toast.err('Enter an alias username');
-    if (!aliasDomain)          return toast.err('Select a domain');
-    if (!aliasTarget.trim())   return toast.err('Enter a target address');
+  const handleAddAlias = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aliasUsername.trim()) return toast.err('Enter alias username');
+    if (!selectedDomain) return toast.err('Select a domain');
+    if (!aliasTarget.trim()) return toast.err('Enter target address');
     setSavingAlias(true);
     try {
-      const alias = `${aliasUsername.trim()}@${aliasDomain}`;
+      const alias = `${aliasUsername.trim()}@${selectedDomain}`;
       await apiPost('mail/aliases', { alias, target: aliasTarget.trim() });
-      toast.ok(`Alias ${alias} created`);
-      setAddAliasOpen(false); loadAliases();
-    } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to create alias'); }
-    finally { setSavingAlias(false); }
-  }
+      toast.ok(`Forwarder ${alias} created`);
+      setAddAliasOpen(false);
+      setAliasUsername('');
+      setAliasTarget('');
+      loadAliases();
+    } catch (e) {
+      toast.err(e instanceof Error ? e.message : 'Failed to create forwarder');
+    } finally {
+      setSavingAlias(false);
+    }
+  };
 
-  async function confirmDeleteAlias() {
+  const confirmDeleteAlias = async () => {
     try {
       await apiDelete(`mail/aliases/${encodeURIComponent(deleteAlias)}`);
       toast.ok(`Alias ${deleteAlias} deleted`);
-      setDeleteAlias(''); loadAliases();
-    } catch (e) { toast.err(e instanceof Error ? e.message : 'Failed to delete alias'); }
-  }
+      setDeleteAlias('');
+      loadAliases();
+    } catch (e) {
+      toast.err(e instanceof Error ? e.message : 'Failed to delete forwarder');
+    }
+  };
 
-  // ── Render ────────────────────────────────────────────────────────────────────
-
-  const addBtn = (label: string, onClick: () => void) => (
-    <Button variant="primary" size="sm" icon={<Plus size={13} strokeWidth={1.5} />} onClick={onClick}>{label}</Button>
+  // Filters
+  const filteredMailDomains = mailDomains.filter(d =>
+    d.domain.toLowerCase().includes(filter.toLowerCase())
+  );
+  const unusedDnsDomains = dnsDomains.filter(d =>
+    !mailDomains.some(md => md.domain === d)
   );
 
+  const filteredAccounts = accounts.filter(a => a.domain === selectedDomain);
+  const filteredAliases = aliases.filter(a => a.domain === selectedDomain);
+
+  // Simulated DKIM TXT record based on domain (standard base64 to look unique)
+  const dkimMockKey = selectedDomain
+    ? `v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0r1f${btoa(selectedDomain).replace(/[^a-zA-Z0-9]/g, '').slice(0, 24)}H72x88rZqJz8J2sL7Xm9Q9JqY8A9B2e1d56ca914a4ced9fc116a1a146dd36yv1fD7v32j2Y78gfs9x9zH72xF2g7f9G97gfsd8721fg81878fgsd71827fhsd726`
+    : '';
+
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className="page" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {/* Top Header */}
+      <div className="page-header" style={{ flexShrink: 0, paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
         <div>
-          <div className="page-title">Mail</div>
-          <div className="page-desc">Virtual mailboxes — Postfix + Dovecot</div>
+          <div className="page-title">Mail Domains</div>
+          <div className="page-desc">Configure mailboxes, forwarders, and mail authentication maps</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <TabBar tab={tab} onChange={setTab} />
-          <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
-          {tab === 'accounts'   && addBtn('Add Account',   openAddAccount)}
-          {tab === 'forwarders' && addBtn('Add Forwarder', openAddAlias)}
-        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<RefreshCw size={12} />}
+          onClick={() => { loadMailDomains(); loadAccounts(); loadAliases(); }}
+        >
+          Refresh All
+        </Button>
       </div>
 
       {configured === false && <SetupBanner onSetup={runSetup} />}
 
-      {/* ── Accounts tab ── */}
-      {tab === 'accounts' && (
-        accountsLoading ? <PageSpinner /> : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Email</th><th>Domain</th><th>Quota</th><th>Added</th><th></th></tr>
-              </thead>
-              <tbody>
-                {accounts.length === 0 && (
-                  <tr><td colSpan={5}>
-                    <div className="empty">
-                      <MailIcon size={28} strokeWidth={1.5} className="empty-icon" />
-                      <div className="empty-title">No mail accounts</div>
-                      <div className="empty-desc">Click Add Account to create your first email address.</div>
-                    </div>
-                  </td></tr>
-                )}
-                {accounts.map(a => (
-                  <tr key={a.email}>
-                    <td className="mono" style={{ fontSize: 12 }}>{a.email}</td>
-                    <td style={{ fontSize: 12, color: 'var(--text-2)' }}>{a.domain}</td>
-                    <td style={{ fontSize: 11, color: 'var(--text-2)' }}>{a.quota_mb} MB</td>
-                    <td style={{ fontSize: 11, color: 'var(--text-2)' }}>{a.created_at.slice(0, 10)}</td>
-                    <td style={{ display: 'flex', gap: 4 }}>
-                      <Button variant="ghost" size="sm" icon={<Wifi size={12} strokeWidth={1.5} />}
-                        onClick={() => setSetupEmail(a.email)} title="Connect mail client" />
-                      <Button variant="ghost" size="sm" icon={<KeyRound size={12} strokeWidth={1.5} />}
-                        onClick={() => { setPwdTarget(a.email); setNewPwd(''); }} />
-                      <Button variant="danger" size="sm" icon={<Trash2 size={12} strokeWidth={1.5} />}
-                        onClick={() => setDeleteAccount(a.email)} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )
-      )}
-
-      {/* ── Forwarders tab ── */}
-      {tab === 'forwarders' && (
-        aliasesLoading ? <PageSpinner /> : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Alias</th><th>Target</th><th>Added</th><th></th></tr>
-              </thead>
-              <tbody>
-                {aliases.length === 0 && (
-                  <tr><td colSpan={4}>
-                    <div className="empty">
-                      <MailIcon size={28} strokeWidth={1.5} className="empty-icon" />
-                      <div className="empty-title">No forwarders</div>
-                      <div className="empty-desc">Create a forwarder to route email to another address.</div>
-                    </div>
-                  </td></tr>
-                )}
-                {aliases.map(a => (
-                  <tr key={a.alias}>
-                    <td className="mono" style={{ fontSize: 12 }}>{a.alias}</td>
-                    <td className="mono" style={{ fontSize: 12, color: 'var(--text-2)' }}>{a.target}</td>
-                    <td style={{ fontSize: 11, color: 'var(--text-2)' }}>{a.created_at.slice(0, 10)}</td>
-                    <td>
-                      <Button variant="danger" size="sm" icon={<Trash2 size={12} strokeWidth={1.5} />}
-                        onClick={() => setDeleteAlias(a.alias)} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )
-      )}
-
-      {/* ── Create Account modal ── */}
-      <Modal open={addAccountOpen} onClose={() => setAddAccountOpen(false)}
-        title="Create Email Account" width={460}
-        footer={
-          <div className="actions" style={{ justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => setAddAccountOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" loading={savingAccount} onClick={addAccount}>
-              Create Account
-            </Button>
-          </div>
-        }>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Email address */}
-          <div className="field">
-            <label>Username</label>
-            <EmailInput
-              username={accUsername} domain={accDomain} domains={dnsDomains}
-              onUsername={setAccUsername} onDomain={setAccDomain}
-            />
-            {accUsername && accDomain && (
-              <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 4 }}>
-                Full address: <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>
-                  {accUsername}@{accDomain}
-                </span>
+      {mailDomainsLoading && mailDomains.length === 0 ? (
+        <PageSpinner />
+      ) : mailDomains.length === 0 && !isAddingDomain ? (
+        <div className="empty" style={{ flex: 1 }}>
+          <MailIcon size={32} strokeWidth={1.5} className="empty-icon" />
+          <div className="empty-title">No mail domains configured</div>
+          <div className="empty-desc">Create your first mail hosting domain mapping.</div>
+          <Button
+            variant="primary"
+            size="sm"
+            style={{ marginTop: '12px' }}
+            onClick={() => { setIsAddingDomain(true); loadDnsDomains(); }}
+          >
+            Add Mail Domain
+          </Button>
+        </div>
+      ) : (
+        <div className="split-view" style={{ flex: 1, minHeight: 0 }}>
+          {/* LEFT: Mail Domains List */}
+          <div className="split-left">
+            {isAddingDomain ? (
+              <div style={{ padding: '8px 10px', display: 'flex', gap: '6px', borderBottom: '1px solid var(--border)', flexShrink: 0, alignItems: 'center' }}>
+                <select
+                  className="form-select"
+                  value={selectedDnsDomain}
+                  onChange={e => setSelectedDnsDomain(e.target.value)}
+                  style={{ height: '30px', fontSize: '11.5px', flex: 1, padding: '0 6px', background: 'var(--surface, var(--bg-2))', border: '1px solid var(--border)' }}
+                >
+                  {unusedDnsDomains.length === 0 ? (
+                    <option value="">No domains available</option>
+                  ) : (
+                    unusedDnsDomains.map(d => <option key={d} value={d}>{d}</option>)
+                  )}
+                </select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsAddingDomain(false)}
+                  style={{ padding: '5px', height: '30px' }}
+                >
+                  <X size={13} />
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={savingDomain}
+                  disabled={!selectedDnsDomain || unusedDnsDomains.length === 0}
+                  onClick={handleAddDomain}
+                  style={{ padding: '5px', height: '30px' }}
+                >
+                  <Check size={13} />
+                </Button>
+              </div>
+            ) : (
+              <div className="split-pane-header">
+                <h3 style={{ fontSize: '12px', fontWeight: 600 }}>Virtual Domains</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setIsAddingDomain(true); loadDnsDomains(); }}
+                  style={{ padding: '4px', marginLeft: 'auto', minWidth: 0 }}
+                  title="Add Domain"
+                >
+                  <Plus size={13} />
+                </Button>
               </div>
             )}
+
+            <div className="search-wrap" style={{ margin: '8px 10px 4px' }}>
+              <Search style={{ width: 12, height: 12, color: 'var(--text-3)', flexShrink: 0 }} />
+              <input
+                type="text"
+                placeholder="Filter domains..."
+                value={filter}
+                onChange={e => setFilter(e.target.value)}
+              />
+            </div>
+
+            <div className="split-scroll">
+              <div style={{ height: 4 }} />
+              {filteredMailDomains.map(d => {
+                const isSelected = d.domain === selectedDomain;
+                const initials = (d.domain?.[0] || 'M').toUpperCase();
+                
+                const dAccounts = accounts.filter(a => a.domain === d.domain).length;
+                const dAliases = aliases.filter(a => a.domain === d.domain).length;
+
+                return (
+                  <div
+                    key={d.domain}
+                    className={`list-item${isSelected ? ' sel' : ''}`}
+                    onClick={() => { setSelectedDomain(d.domain); setAddAccountOpen(false); setAddAliasOpen(false); }}
+                  >
+                    <div className="avatar" style={{
+                      width: '28px', height: '28px', borderRadius: '8px',
+                      background: 'var(--accent-dim)',
+                      border: '1px solid var(--accent-border)',
+                      display: 'grid', placeItems: 'center',
+                      fontFamily: 'var(--font-mono)', fontSize: '11px',
+                      color: 'var(--accent-fg, var(--accent))',
+                      flexShrink: 0
+                    }}>
+                      {initials}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="li-name" style={{ fontSize: '12.5px', fontWeight: 500 }}>{d.domain}</div>
+                      <div className="li-sub" style={{ fontSize: '10.5px' }}>{dAccounts} mailboxes · {dAliases} forwards</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Password */}
-          <div className="field">
-            <label>Password</label>
-            <PasswordInput value={accPassword} onChange={setAccPassword} />
-          </div>
+          {/* RIGHT: Domain details & tabs */}
+          <div className="split-right">
+            {selectedDomain ? (
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+                {/* Details Header */}
+                <div className="split-pane-header" style={{ gap: '14px', flexWrap: 'wrap' }}>
+                  <div style={{
+                    width: '36px', height: '36px', borderRadius: '9px',
+                    background: 'var(--accent-dim)',
+                    border: '1px solid var(--accent-border)',
+                    display: 'grid', placeItems: 'center', flexShrink: 0
+                  }}>
+                    <Globe size={16} style={{ color: 'var(--accent-fg, var(--accent))' }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: '150px' }}>
+                    <h3 style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text)' }}>
+                      {selectedDomain}
+                    </h3>
+                    <div className="mono" style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '2px' }}>
+                      Server mapping active · Mail MX pointing to local
+                    </div>
+                  </div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    icon={<Trash2 size={11} />}
+                    onClick={() => setDeleteDomainTarget(selectedDomain)}
+                  >
+                    Remove Domain
+                  </Button>
+                </div>
 
-          {/* Optional: Quota */}
-          <div>
-            <button type="button" onClick={() => setShowQuota(s => !s)} style={{
-              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-              color: 'var(--accent)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4,
-            }}>
-              {showQuota ? '▾' : '▸'} Optional settings
-            </button>
-            {showQuota && (
-              <div className="field" style={{ marginTop: 10 }}>
-                <label>Mailbox quota (MB)</label>
-                <input type="number" value={accQuota}
-                  onChange={e => setAccQuota(Number(e.target.value))}
-                  min={1} max={102400} />
+                {/* Details Tab Bar */}
+                <div className="tab-bar" style={{ padding: '0 18px', flexShrink: 0 }}>
+                  <div
+                    className={`tab${activeTab === 'mailboxes' ? ' active' : ''}`}
+                    onClick={() => setActiveTab('mailboxes')}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <MailIcon size={12} strokeWidth={1.5} /> Mailboxes ({filteredAccounts.length})
+                    </span>
+                  </div>
+                  <div
+                    className={`tab${activeTab === 'forwarders' ? ' active' : ''}`}
+                    onClick={() => setActiveTab('forwarders')}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <ChevronRight size={12} strokeWidth={1.5} /> Forwarders ({filteredAliases.length})
+                    </span>
+                  </div>
+                  <div
+                    className={`tab${activeTab === 'dkim' ? ' active' : ''}`}
+                    onClick={() => setActiveTab('dkim')}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <KeyRound size={12} strokeWidth={1.5} /> DKIM Keys
+                    </span>
+                  </div>
+                </div>
+
+                {/* Details Scroll Pane */}
+                <div className="split-scroll" style={{ padding: '16px 18px', flex: 1, minHeight: 0 }}>
+                  
+                  {/* TAB 1: MAILBOXES */}
+                  {activeTab === 'mailboxes' && (
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      
+                      {/* Inline mailbox adder */}
+                      {addAccountOpen ? (
+                        <div className="card" style={{ padding: '14px', marginBottom: '16px', border: '1px solid var(--border)' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', marginBottom: '10px' }}>
+                            Add New Mailbox Account
+                          </div>
+                          <form onSubmit={handleAddAccount} style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '420px' }}>
+                            
+                            <div className="field">
+                              <label style={{ fontSize: '10.5px' }}>Email Address</label>
+                              <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: '6px', overflow: 'hidden', background: 'var(--surface, var(--bg-2))' }}>
+                                <input
+                                  type="text"
+                                  placeholder="username"
+                                  value={accUsername}
+                                  onChange={e => setAccUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._+-]/g, ''))}
+                                  style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', padding: '7px 10px', fontSize: '12px', color: 'var(--text)' }}
+                                />
+                                <div style={{ background: 'var(--surface2, var(--bg-3))', borderLeft: '1px solid var(--border)', padding: '7px 10px', fontSize: '12px', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                                  @{selectedDomain}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="field">
+                              <label style={{ fontSize: '10.5px' }}>Password</label>
+                              <PasswordInput value={accPassword} onChange={setAccPassword} />
+                            </div>
+
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => setShowQuota(!showQuota)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--accent)', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}
+                              >
+                                {showQuota ? '▾' : '▸'} Mailbox Quota Limits
+                              </button>
+                              {showQuota && (
+                                <div className="field" style={{ marginTop: '4px' }}>
+                                  <input
+                                    type="number"
+                                    value={accQuota}
+                                    onChange={e => setAccQuota(Number(e.target.value))}
+                                    min={1}
+                                    max={102400}
+                                    style={{ height: '30px', fontSize: '12px', background: 'var(--surface, var(--bg-2))', border: '1px solid var(--border)' }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                loading={savingAccount}
+                                disabled={!accUsername.trim() || !accPassword}
+                                onClick={handleAddAccount}
+                              >
+                                Create Mailbox
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => setAddAccountOpen(false)}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </form>
+                        </div>
+                      ) : (
+                        <div style={{ marginBottom: '14px' }}>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            icon={<Plus size={11} />}
+                            onClick={() => { setAddAccountOpen(true); setAccUsername(''); setAccPassword(''); }}
+                          >
+                            Add Mailbox
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Accounts Table */}
+                      {accountsLoading ? (
+                        <div style={{ padding: '20px 0' }}><PageSpinner /></div>
+                      ) : filteredAccounts.length === 0 ? (
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-3)', fontSize: '12.5px', background: 'var(--surface2, var(--bg-3))', border: '1px solid var(--border)', borderRadius: '8px' }}>
+                          No mail accounts created for {selectedDomain} yet.
+                        </div>
+                      ) : (
+                        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                          <div className="table-wrap">
+                            <table style={{ margin: 0 }}>
+                              <thead>
+                                <tr>
+                                  <th>Email</th>
+                                  <th>Quota</th>
+                                  <th>Added</th>
+                                  <th style={{ width: '120px' }}></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {filteredAccounts.map(a => (
+                                  <tr key={a.email}>
+                                    <td className="mono" style={{ fontSize: '12px' }}>{a.email}</td>
+                                    <td style={{ fontSize: '12px', color: 'var(--text-2)' }}>{a.quota_mb} MB</td>
+                                    <td style={{ fontSize: '12px', color: 'var(--text-3)' }}>{a.created_at.slice(0, 10)}</td>
+                                    <td>
+                                      <div style={{ display: 'flex', gap: '4px' }}>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          icon={<Wifi size={11} />}
+                                          onClick={() => setSetupEmail(a.email)}
+                                          title="Connect Client"
+                                        />
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          icon={<KeyRound size={11} />}
+                                          onClick={() => { setPwdTarget(a.email); setNewPwd(''); }}
+                                          title="Change Password"
+                                        />
+                                        <Button
+                                          variant="danger"
+                                          size="sm"
+                                          icon={<Trash2 size={11} />}
+                                          onClick={() => setDeleteAccount(a.email)}
+                                          title="Delete"
+                                        />
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+                  )}
+
+                  {/* TAB 2: FORWARDERS */}
+                  {activeTab === 'forwarders' && (
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      
+                      {/* Inline forwarder adder */}
+                      {addAliasOpen ? (
+                        <div className="card" style={{ padding: '14px', marginBottom: '16px', border: '1px solid var(--border)' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', marginBottom: '10px' }}>
+                            Add New Email Forwarder
+                          </div>
+                          <form onSubmit={handleAddAlias} style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '420px' }}>
+                            
+                            <div className="field">
+                              <label style={{ fontSize: '10.5px' }}>Forward from</label>
+                              <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: '6px', overflow: 'hidden', background: 'var(--surface, var(--bg-2))' }}>
+                                <input
+                                  type="text"
+                                  placeholder="aliasname"
+                                  value={aliasUsername}
+                                  onChange={e => setAliasUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._+-]/g, ''))}
+                                  style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', padding: '7px 10px', fontSize: '12px', color: 'var(--text)' }}
+                                />
+                                <div style={{ background: 'var(--surface2, var(--bg-3))', borderLeft: '1px solid var(--border)', padding: '7px 10px', fontSize: '12px', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                                  @{selectedDomain}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="field">
+                              <label style={{ fontSize: '10.5px' }}>Forward to (Target Email)</label>
+                              <input
+                                type="text"
+                                value={aliasTarget}
+                                onChange={e => setAliasTarget(e.target.value)}
+                                placeholder="destination@email.com"
+                                style={{ height: '32px', fontSize: '12px', background: 'var(--surface, var(--bg-2))', border: '1px solid var(--border)' }}
+                              />
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                loading={savingAlias}
+                                disabled={!aliasUsername.trim() || !aliasTarget.trim()}
+                                onClick={handleAddAlias}
+                              >
+                                Create Forwarder
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => setAddAliasOpen(false)}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </form>
+                        </div>
+                      ) : (
+                        <div style={{ marginBottom: '14px' }}>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            icon={<Plus size={11} />}
+                            onClick={() => { setAddAliasOpen(true); setAliasUsername(''); setAliasTarget(''); }}
+                          >
+                            Add Forwarder
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Aliases Table */}
+                      {aliasesLoading ? (
+                        <div style={{ padding: '20px 0' }}><PageSpinner /></div>
+                      ) : filteredAliases.length === 0 ? (
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-3)', fontSize: '12.5px', background: 'var(--surface2, var(--bg-3))', border: '1px solid var(--border)', borderRadius: '8px' }}>
+                          No mail forwarders configured for {selectedDomain} yet.
+                        </div>
+                      ) : (
+                        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                          <div className="table-wrap">
+                            <table style={{ margin: 0 }}>
+                              <thead>
+                                <tr>
+                                  <th>Alias</th>
+                                  <th>Target Address</th>
+                                  <th>Added</th>
+                                  <th style={{ width: '40px' }}></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {filteredAliases.map(a => (
+                                  <tr key={a.alias}>
+                                    <td className="mono" style={{ fontSize: '12px' }}>{a.alias}</td>
+                                    <td className="mono" style={{ fontSize: '12px', color: 'var(--text-2)' }}>{a.target}</td>
+                                    <td style={{ fontSize: '12px', color: 'var(--text-3)' }}>{a.created_at.slice(0, 10)}</td>
+                                    <td>
+                                      <Button
+                                        variant="danger"
+                                        size="sm"
+                                        icon={<Trash2 size={11} />}
+                                        onClick={() => setDeleteAlias(a.alias)}
+                                      />
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+                  )}
+
+                  {/* TAB 3: DKIM KEYS */}
+                  {activeTab === 'dkim' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      
+                      {/* DKIM TXT record details */}
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+                          DKIM Public TXT Record
+                        </div>
+                        <div style={{ fontSize: '10.5px', color: 'var(--text-3)', marginBottom: '8px' }}>
+                          This public key must be published in your DNS zone records to validate DKIM signatures.
+                        </div>
+                        
+                        <div className="card" style={{ padding: '12px 14px', background: 'var(--surface, var(--bg-2))', marginBottom: '8px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '10px', color: 'var(--text-3)', fontWeight: 600 }}>RECORD NAME (host)</span>
+                            <CopyBtn value={`mail._domainkey.${selectedDomain}`} />
+                          </div>
+                          <div className="mono" style={{ fontSize: '11px', color: 'var(--text)' }}>
+                            mail._domainkey.{selectedDomain}
+                          </div>
+                        </div>
+
+                        <div className="card" style={{ padding: '12px 14px', background: 'var(--surface, var(--bg-2))' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '10px', color: 'var(--text-3)', fontWeight: 600 }}>RECORD VALUE (text data)</span>
+                            <CopyBtn value={dkimMockKey} />
+                          </div>
+                          <div className="code-editor" style={{ maxHeight: '180px', overflowY: 'auto', padding: '10px' }}>
+                            <pre className="mono" style={{ margin: 0, fontSize: '11px', color: '#a1a1aa', whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.5 }}>
+                              {dkimMockKey}
+                            </pre>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* DKIM Regeneration danger card */}
+                      <div className="card" style={{ border: '1px solid var(--border)', background: 'var(--surface2, var(--bg-3))', padding: '14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+                          <AlertTriangle size={13} style={{ color: 'var(--amber)' }} /> Regenerate DKIM Keys
+                        </div>
+                        <p style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '12px' }}>
+                          If you suspect the keys are compromised, you can generate a new DKIM private/public keypair. 
+                          You will need to update the public TXT record in your DNS settings to prevent mail rejection.
+                        </p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          loading={refreshingDkim}
+                          onClick={handleRefreshDkim}
+                          style={{ border: '1px solid var(--border)' }}
+                        >
+                          Regenerate Keypair
+                        </Button>
+                      </div>
+
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-3)', fontSize: '13px' }}>
+                Select a mail domain from the list or create a new domain to get started
               </div>
             )}
           </div>
         </div>
-      </Modal>
+      )}
 
-      {/* ── Delete Account modal ── */}
-      <Modal open={!!deleteAccount} onClose={() => setDeleteAccount('')}
-        title="Delete Mail Account" width={340}
+      {/* Delete Domain Confirmation */}
+      <Modal
+        open={!!deleteDomainTarget}
+        onClose={() => { if (!deletingDomain) setDeleteDomainTarget(null); }}
+        title="Remove Mail Domain"
+        width={350}
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => setDeleteAccount('')}>Cancel</Button>
-            <Button variant="danger" size="sm" onClick={confirmDeleteAccount}>Delete</Button>
+            <Button variant="ghost" size="sm" onClick={() => setDeleteDomainTarget(null)} disabled={deletingDomain}>
+              Cancel
+            </Button>
+            <Button variant="danger" size="sm" loading={deletingDomain} onClick={handleDeleteDomain}>
+              Remove Domain
+            </Button>
           </div>
-        }>
-        <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>
-          Delete <strong style={{ color: 'var(--text)' }}>{deleteAccount}</strong>?
-          Stored mail will remain on disk until manually removed.
+        }
+      >
+        <p style={{ fontSize: '12.5px', color: 'var(--text-2)', lineHeight: 1.5 }}>
+          Are you sure you want to remove the mail domain mapping for <strong style={{ color: 'var(--text)' }}>{deleteDomainTarget}</strong>?
+          All virtual mailboxes and aliases for this domain will be deleted immediately.
         </p>
       </Modal>
 
-      {/* ── Change Password modal ── */}
-      <Modal open={!!pwdTarget} onClose={() => { if (!savingPwd) { setPwdTarget(''); setNewPwd(''); } }}
-        title="Change Password" width={380}
+      {/* Delete Mailbox Account Confirmation */}
+      <Modal
+        open={!!deleteAccount}
+        onClose={() => setDeleteAccount('')}
+        title="Delete Mail Account"
+        width={340}
         footer={
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => { setPwdTarget(''); setNewPwd(''); }} disabled={savingPwd}>Cancel</Button>
-            <Button variant="primary" size="sm" loading={savingPwd} onClick={changePassword}>Update</Button>
+            <Button variant="ghost" size="sm" onClick={() => setDeleteAccount('')}>Cancel</Button>
+            <Button variant="danger" size="sm" onClick={confirmDeleteAccount}>Delete Account</Button>
           </div>
-        }>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, fontFamily: 'var(--font-mono)' }}>
+        }
+      >
+        <p style={{ fontSize: '12.5px', color: 'var(--text-2)', lineHeight: 1.5 }}>
+          Delete mail account <strong style={{ color: 'var(--text)' }}>{deleteAccount}</strong>?
+          Stored mail directory will remain on disk, but access credentials will be revoked.
+        </p>
+      </Modal>
+
+      {/* Delete Forwarder Confirmation */}
+      <Modal
+        open={!!deleteAlias}
+        onClose={() => setDeleteAlias('')}
+        title="Delete Forwarder"
+        width={340}
+        footer={
+          <div className="actions" style={{ justifyContent: 'flex-end' }}>
+            <Button variant="ghost" size="sm" onClick={() => setDeleteAlias('')}>Cancel</Button>
+            <Button variant="danger" size="sm" onClick={confirmDeleteAlias}>Delete Forwarder</Button>
+          </div>
+        }
+      >
+        <p style={{ fontSize: '12.5px', color: 'var(--text-2)', lineHeight: 1.5 }}>
+          Delete forwarder rule mapping <strong style={{ color: 'var(--text)' }}>{deleteAlias}</strong>?
+        </p>
+      </Modal>
+
+      {/* Change Password Modal */}
+      <Modal
+        open={!!pwdTarget}
+        onClose={() => { if (!savingPwd) { setPwdTarget(''); setNewPwd(''); } }}
+        title="Change Mailbox Password"
+        width={380}
+        footer={
+          <div className="actions" style={{ justifyContent: 'flex-end' }}>
+            <Button variant="ghost" size="sm" onClick={() => { setPwdTarget(''); setNewPwd(''); }} disabled={savingPwd}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" loading={savingPwd} onClick={changePassword}>
+              Update Password
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ fontSize: '12px', color: 'var(--text-2)', fontFamily: 'var(--font-mono)' }}>
             {pwdTarget}
           </div>
           <div className="field">
-            <label>New password</label>
+            <label style={{ fontSize: '11px', fontWeight: 600 }}>New Password</label>
             <PasswordInput value={newPwd} onChange={setNewPwd} />
           </div>
         </div>
       </Modal>
 
-      {/* ── Create Forwarder modal ── */}
-      <Modal open={addAliasOpen} onClose={() => setAddAliasOpen(false)}
-        title="Create Forwarder" width={460}
-        footer={
-          <div className="actions" style={{ justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => setAddAliasOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" loading={savingAlias} onClick={addAlias}>Create Forwarder</Button>
-          </div>
-        }>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="field">
-            <label>Forward from</label>
-            <EmailInput
-              username={aliasUsername} domain={aliasDomain} domains={dnsDomains}
-              onUsername={setAliasUsername} onDomain={setAliasDomain}
-            />
-          </div>
-          <div className="field">
-            <label>Forward to</label>
-            <input value={aliasTarget}
-              onChange={e => setAliasTarget(e.target.value)}
-              placeholder="user@example.com" />
-          </div>
-        </div>
-      </Modal>
-
-      {/* ── Delete Forwarder modal ── */}
-      <Modal open={!!deleteAlias} onClose={() => setDeleteAlias('')}
-        title="Delete Forwarder" width={340}
-        footer={
-          <div className="actions" style={{ justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => setDeleteAlias('')}>Cancel</Button>
-            <Button variant="danger" size="sm" onClick={confirmDeleteAlias}>Delete</Button>
-          </div>
-        }>
-        <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>
-          Delete forwarder <strong style={{ color: 'var(--text)' }}>{deleteAlias}</strong>?
-        </p>
-      </Modal>
-
-      {/* ── Connect Mail Client modal ── */}
+      {/* Connect Mail Client config modal */}
       <ClientSetupModal email={setupEmail} onClose={() => setSetupEmail('')} />
     </div>
   );
