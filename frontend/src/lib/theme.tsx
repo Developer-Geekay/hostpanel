@@ -1,36 +1,111 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
-export type ThemeKey = 'material' | 'neumorphic';
-export type ColorKey = 'blue' | 'purple' | 'teal' | 'amber' | 'green' | 'rose' | 'cyan' | 'slate';
+export type ThemeKey =
+  | 'material'
+  | 'midnight'
+  | 'ocean'
+  | 'forest'
+  | 'rose'
+  | 'sand'
+  | 'slate'
+  | 'liquid-glass';
+
+export type ColorKey =
+  | 'indigo'
+  | 'blue'
+  | 'purple'
+  | 'teal'
+  | 'cyan'
+  | 'green'
+  | 'amber'
+  | 'rose'
+  | 'slate';
 
 export interface Theme {
   key: ThemeKey;
   label: string;
   description: string;
-  preview: { bg: string; card: string };
+  dark: boolean;
+  preview: { bg: string; surface: string; accent: string };
 }
 
 export interface Color {
   key: ColorKey;
   label: string;
   value: string;
+  fg: string;
   textColor: string;
 }
 
 export const THEMES: Theme[] = [
-  { key: 'material',   label: 'Material',    description: 'Dark elevated',  preview: { bg: '#0f1117', card: '#161b22' } },
-  { key: 'neumorphic', label: 'Neumorphic',  description: 'Soft light',     preview: { bg: '#e4e9f0', card: '#e4e9f0' } },
+  {
+    key: 'material',
+    label: 'Material',
+    description: 'Dark elevated',
+    dark: true,
+    preview: { bg: '#09090b', surface: '#111113', accent: '#6366f1' },
+  },
+  {
+    key: 'midnight',
+    label: 'Midnight',
+    description: 'Deep indigo dark',
+    dark: true,
+    preview: { bg: '#060609', surface: '#111118', accent: '#8b5cf6' },
+  },
+  {
+    key: 'ocean',
+    label: 'Ocean',
+    description: 'Deep blue-teal',
+    dark: true,
+    preview: { bg: '#050e18', surface: '#10202e', accent: '#06b6d4' },
+  },
+  {
+    key: 'forest',
+    label: 'Forest',
+    description: 'Deep emerald',
+    dark: true,
+    preview: { bg: '#060c07', surface: '#111a11', accent: '#10b981' },
+  },
+  {
+    key: 'rose',
+    label: 'Rose',
+    description: 'Deep crimson',
+    dark: true,
+    preview: { bg: '#0d0407', surface: '#1c0e14', accent: '#f43f5e' },
+  },
+  {
+    key: 'sand',
+    label: 'Sand',
+    description: 'Warm parchment',
+    dark: false,
+    preview: { bg: '#faf8f2', surface: '#ffffff', accent: '#d97706' },
+  },
+  {
+    key: 'slate',
+    label: 'Slate',
+    description: 'Cool grey-blue',
+    dark: false,
+    preview: { bg: '#eef2f7', surface: '#ffffff', accent: '#0ea5e9' },
+  },
+  {
+    key: 'liquid-glass',
+    label: 'Liquid Glass',
+    description: 'Frosted translucent',
+    dark: true,
+    preview: { bg: '#0a0a0f', surface: 'rgba(255,255,255,0.08)', accent: '#6366f1' },
+  },
 ];
 
 export const COLORS: Color[] = [
-  { key: 'blue',   label: 'Blue',   value: '#3b82f6', textColor: '#fff'     },
-  { key: 'purple', label: 'Purple', value: '#7c3aed', textColor: '#fff'     },
-  { key: 'teal',   label: 'Teal',   value: '#0d9488', textColor: '#fff'     },
-  { key: 'amber',  label: 'Amber',  value: '#f59e0b', textColor: '#0a0500'  },
-  { key: 'green',  label: 'Green',  value: '#22c55e', textColor: '#031505'  },
-  { key: 'rose',   label: 'Rose',   value: '#f43f5e', textColor: '#fff'     },
-  { key: 'cyan',   label: 'Cyan',   value: '#06b6d4', textColor: '#020b0f'  },
-  { key: 'slate',  label: 'Slate',  value: '#94a3b8', textColor: '#0a0b0d'  },
+  { key: 'indigo', label: 'Indigo',  value: '#6366f1', fg: '#818cf8', textColor: '#fff'    },
+  { key: 'blue',   label: 'Blue',    value: '#3b82f6', fg: '#60a5fa', textColor: '#fff'    },
+  { key: 'purple', label: 'Purple',  value: '#8b5cf6', fg: '#a78bfa', textColor: '#fff'    },
+  { key: 'teal',   label: 'Teal',    value: '#0d9488', fg: '#2dd4bf', textColor: '#fff'    },
+  { key: 'cyan',   label: 'Cyan',    value: '#06b6d4', fg: '#22d3ee', textColor: '#020b0f' },
+  { key: 'green',  label: 'Green',   value: '#10b981', fg: '#34d399', textColor: '#031505' },
+  { key: 'amber',  label: 'Amber',   value: '#f59e0b', fg: '#fbbf24', textColor: '#0a0500' },
+  { key: 'rose',   label: 'Rose',    value: '#f43f5e', fg: '#fb7185', textColor: '#fff'    },
+  { key: 'slate',  label: 'Slate',   value: '#94a3b8', fg: '#cbd5e1', textColor: '#0a0b0d' },
 ];
 
 interface ThemeCtx {
@@ -59,7 +134,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   });
   const [colorKey, setColorKey] = useState<ColorKey>(() => {
     const stored = localStorage.getItem('hp_color') as ColorKey | null;
-    return stored && COLORS.some(c => c.key === stored) ? stored : 'blue';
+    // migrate old 'blue' → 'blue', map removed 'neumorphic' → 'material'
+    if (stored === 'neumorphic' as string) return 'indigo';
+    return stored && COLORS.some(c => c.key === stored) ? stored : 'indigo';
   });
 
   useEffect(() => { applyTheme(themeKey, colorKey); }, [themeKey, colorKey]);
