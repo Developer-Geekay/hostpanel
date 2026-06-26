@@ -59,20 +59,19 @@ export function PackageShell() {
   useEffect(() => {
     if (!slug) return;
     setError('');
-    setSdkComp(null);
 
     // Build api once per slug
     apiRef.current = buildApi(slug);
     const api = apiRef.current;
 
     const init = () => {
-      // ── SDK path (new plugins) ──────────────────────────────────────────
+      // ── SDK path (new plugins) ───────────────────────────────────────────────────
       const Comp = window.__hpkg_sdk?._registry.get(slug);
       if (Comp) {
         setSdkComp(() => Comp as ComponentType<{ api: PkgApi }>);
         return;
       }
-      // ── Legacy path (old compiled IIFE plugins — WireGuard etc.) ────────
+      // ── Legacy path (old compiled IIFE plugins — WireGuard etc.) ─────────────────
       const pkg = window.__hpkg?.[slug];
       if (pkg?.init && hostRef.current) {
         pkg.init(hostRef.current, api);
@@ -81,21 +80,30 @@ export function PackageShell() {
       setError(`Package "${slug}" did not register a plugin`);
     };
 
-    // Already loaded?
+    // Fix 1: Check registry BEFORE clearing SdkComp — zero flash on back-nav
     if (window.__hpkg_sdk?._registry.has(slug) || window.__hpkg?.[slug]) {
       init();
       return;
     }
 
+    // Not loaded yet — clear stale comp and load script
+    setSdkComp(null);
+
     const script = document.createElement('script');
-    // Cache-bust on every page load so plugin updates are picked up immediately.
-    script.src    = `/packages/${slug}/main.js?v=${Date.now()}`;
+    // Fix 2: Stable session cache key — re-download only when plugin is updated,
+    // not on every navigation. Key is stored per-slug in sessionStorage and
+    // bumped by the Packages screen after a successful install/update.
+    const cacheKey = sessionStorage.getItem(`hp_pkg_v_${slug}`) ?? '1';
+    script.src    = `/packages/${slug}/main.js?v=${cacheKey}`;
     script.onload = init;
     script.onerror = () => setError(`/packages/${slug}/main.js not found`);
     document.head.appendChild(script);
 
     return () => {
-      setSdkComp(null);
+      // Fix 3: Don’t null SdkComp when registry already has it — instant re-render
+      if (!window.__hpkg_sdk?._registry.has(slug)) {
+        setSdkComp(null);
+      }
       setError('');
       window.__hpkg?.[slug]?.destroy?.();
       hostRef.current?.replaceChildren();
