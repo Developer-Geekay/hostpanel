@@ -28,7 +28,17 @@ export function useDns() {
 
   const loadZones = useCallback(async () => {
     try {
-      setZones(await apiGet<DnsZone[]>('dns/zones'));
+      const zoneList = await apiGet<DnsZone[]>('dns/zones');
+      setZones(zoneList);
+      
+      // Fetch record count for all zones in parallel in the background
+      for (const zone of zoneList) {
+        apiGet<DnsRecord[]>(`dns/zones/${zone.name}/records`)
+          .then(recs => {
+            setZones(prev => prev.map(z => z.name === zone.name ? { ...z, record_count: recs.length } : z));
+          })
+          .catch(() => {});
+      }
     } catch (e: unknown) {
       toast.err(e instanceof Error ? e.message : 'Failed to load DNS zones');
     } finally {
@@ -41,7 +51,9 @@ export function useDns() {
     setRecordsLoading(true);
     setTypeFilter('All');
     try {
-      setRecords(await apiGet<DnsRecord[]>(`dns/zones/${zone.name}/records`));
+      const data = await apiGet<DnsRecord[]>(`dns/zones/${zone.name}/records`);
+      setRecords(data);
+      setZones(prev => prev.map(z => z.name === zone.name ? { ...z, record_count: data.length } : z));
     } catch (e: unknown) {
       toast.err(e instanceof Error ? e.message : 'Failed to load records');
     } finally {
