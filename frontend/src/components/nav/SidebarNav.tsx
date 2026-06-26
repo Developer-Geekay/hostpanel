@@ -66,23 +66,6 @@ export function SidebarNav() {
         <ThemePicker />
       </div>
 
-      {/* Sidebar Search Section */}
-      <div className="sidebar-search" style={{ padding: '0 12px 10px', marginTop: '10px' }}>
-        <div className="sidebar-search-inner" style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: 'var(--surface2, var(--bg-3))', border: '1px solid var(--border2, var(--border))',
-          borderRadius: '7px', padding: '6px 10px', height: '30px', cursor: 'text'
-        }}>
-          <Search size={12} className="text-muted" style={{ strokeWidth: 1.5, flexShrink: 0, color: 'var(--text-3)' }} />
-          <span style={{ fontSize: '12px', color: 'var(--text-3)', flex: 1 }}>Quick search…</span>
-          <span className="mono" style={{
-            fontSize: '9px', color: 'var(--text-3)',
-            background: 'var(--surface, var(--bg-2))', border: '1px solid var(--border2, var(--border))',
-            borderRadius: '3px', padding: '1px 4px'
-          }}>⌘K</span>
-        </div>
-      </div>
-
       {/* Sidebar Navigation Body */}
       <div className="nav-body">
         {sections
