@@ -128,7 +128,7 @@ export function ThemePicker({ compact }: ThemePickerProps) {
 
   // Sidebar theme picker (default mode)
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} style={{ position: 'relative', marginLeft: 'auto' }}>
       <button
         id="theme-palette-btn"
         onClick={() => setOpen(v => !v)}
