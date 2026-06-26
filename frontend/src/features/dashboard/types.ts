@@ -12,6 +12,11 @@ export interface SystemStats {
   memory: { total: number; available: number; percent: number };
   disks: DiskPartition[];
   network: { bytes_sent: number; bytes_recv: number };
+  uptime?: number;
+  load_avg?: number[];
+  hostname?: string;
+  os?: string;
+  kernel?: string;
 }
 
 export interface StatsHistory {

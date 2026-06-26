@@ -1,5 +1,8 @@
 import psutil
 import time
+import os
+import socket
+import platform
 
 _prev_net: psutil._common.snetio | None = None  # type: ignore[name-defined]
 _prev_time: float | None = None
@@ -37,7 +40,7 @@ def _get_disks() -> list[dict]:
 
 
 def get_stats() -> dict:
-    """Return CPU, memory, disk partitions, and network stats. Blocking — run in executor if on async path."""
+    """Return CPU, memory, disk partitions, network stats, and general system info."""
     global _prev_net, _prev_time
 
     cpu  = psutil.cpu_percent(interval=None)
@@ -56,6 +59,39 @@ def get_stats() -> dict:
     _prev_net  = net
     _prev_time = now
 
+    # Load avg
+    try:
+        load = os.getloadavg()
+    except (AttributeError, OSError):
+        load = (0.0, 0.0, 0.0)
+
+    # Uptime
+    try:
+        boot_time = psutil.boot_time()
+        uptime = time.time() - boot_time
+    except Exception:
+        uptime = 0.0
+
+    # Hostname
+    try:
+        hostname = socket.gethostname()
+    except Exception:
+        hostname = "localhost"
+
+    # OS pretty name
+    os_name = "Linux"
+    if os.path.exists("/etc/os-release"):
+        try:
+            with open("/etc/os-release") as f:
+                for line in f:
+                    if line.startswith("PRETTY_NAME="):
+                        os_name = line.split("=")[1].strip().strip('"')
+                        break
+        except Exception:
+            pass
+    else:
+        os_name = f"{platform.system()} {platform.release()}"
+
     return {
         "cpu": round(cpu, 1),
         "memory": {
@@ -68,4 +104,10 @@ def get_stats() -> dict:
             "bytes_sent": round(bytes_sent_rate),
             "bytes_recv": round(bytes_recv_rate),
         },
+        "uptime": round(uptime),
+        "load_avg": [round(x, 2) for x in load],
+        "hostname": hostname,
+        "os": os_name,
+        "kernel": platform.release(),
     }
+
