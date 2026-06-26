@@ -878,3 +878,108 @@
 [data-theme="panel"] tbody tr:nth-child(4)  { animation: panel-row-in 0.3s 0.20s both; }
 [data-theme="panel"] tbody tr:nth-child(5)  { animation: panel-row-in 0.3s 0.25s both; }
 [data-theme="panel"] tbody tr:nth-child(n+6){ animation: panel-row-in 0.3s 0.30s both; }
+
+/* ── Theme popup ─────────────────────────────────────────────────────────── */
+.theme-popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: none;
+}
+.theme-popup-overlay.open {
+  display: block;
+}
+.theme-popup {
+  position: fixed;
+  z-index: 9999;
+  background: var(--surface, var(--bg-2));
+  border: 1px solid var(--border2, var(--border));
+  border-radius: 14px;
+  padding: 4px;
+  width: 286px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.2);
+  display: none;
+}
+.theme-popup.open {
+  display: block;
+}
+.tp-header {
+  padding: 10px 12px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.tp-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.tp-section {
+  padding: 8px 10px 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.tp-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+  margin: 2px 4px;
+  border: 1px solid transparent;
+}
+.tp-row:hover {
+  background: var(--surface2, var(--bg-3));
+}
+.tp-row.active {
+  background: var(--accent-dim);
+  border-color: var(--accent-border);
+}
+.tp-row.active .tp-name {
+  color: var(--accent-fg, var(--accent));
+}
+.tp-preview {
+  width: 52px;
+  height: 38px;
+  border-radius: 7px;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+.tp-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  flex: 1;
+}
+.tp-sub {
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-top: 1px;
+}
+.tp-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.tp-row.active .tp-check {
+  display: flex;
+}
+.tp-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 8px;
+}
+

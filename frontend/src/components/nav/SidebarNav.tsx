@@ -2,31 +2,31 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Settings2, Package, Users, Globe,
   FolderOpen, Terminal, Lock, Database, LogOut, Server,
-  Wifi, ArrowLeftRight, HardDrive, ScrollText, Mail,
+  Wifi, ArrowLeftRight, HardDrive, ScrollText, Mail, Search,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { usePlugins } from '../../lib/plugins';
 import { ThemePicker } from '../ui/ThemePicker';
 
 const iconMap: Record<string, React.ReactNode> = {
-  speed:            <LayoutDashboard size={15} strokeWidth={1.5} />,
-  settings_suggest: <Settings2      size={15} strokeWidth={1.5} />,
-  extension:        <Package        size={15} strokeWidth={1.5} />,
-  people:           <Users          size={15} strokeWidth={1.5} />,
-  dns:              <Globe          size={15} strokeWidth={1.5} />,
-  folder_open:      <FolderOpen     size={15} strokeWidth={1.5} />,
-  terminal:         <Terminal       size={15} strokeWidth={1.5} />,
-  lock:             <Lock           size={15} strokeWidth={1.5} />,
-  storage:          <Database       size={15} strokeWidth={1.5} />,
-  vpn_lock:         <Wifi           size={15} strokeWidth={1.5} />,
-  web:              <Globe          size={15} strokeWidth={1.5} />,
-  swap_horiz:       <ArrowLeftRight size={15} strokeWidth={1.5} />,
-  ftp:              <Server         size={15} strokeWidth={1.5} />,
-  hard_drive:       <HardDrive      size={15} strokeWidth={1.5} />,
-  audit:            <ScrollText     size={15} strokeWidth={1.5} />,
-  mail:             <Mail           size={15} strokeWidth={1.5} />,
+  speed:            <LayoutDashboard size={14} strokeWidth={1.5} />,
+  settings_suggest: <Settings2      size={14} strokeWidth={1.5} />,
+  extension:        <Package        size={14} strokeWidth={1.5} />,
+  people:           <Users          size={14} strokeWidth={1.5} />,
+  dns:              <Globe          size={14} strokeWidth={1.5} />,
+  folder_open:      <FolderOpen     size={14} strokeWidth={1.5} />,
+  terminal:         <Terminal       size={14} strokeWidth={1.5} />,
+  lock:             <Lock           size={14} strokeWidth={1.5} />,
+  storage:          <Database       size={14} strokeWidth={1.5} />,
+  vpn_lock:         <Wifi           size={14} strokeWidth={1.5} />,
+  web:              <Globe          size={14} strokeWidth={1.5} />,
+  swap_horiz:       <ArrowLeftRight size={14} strokeWidth={1.5} />,
+  ftp:              <Server         size={14} strokeWidth={1.5} />,
+  hard_drive:       <HardDrive      size={14} strokeWidth={1.5} />,
+  audit:            <ScrollText     size={14} strokeWidth={1.5} />,
+  mail:             <Mail           size={14} strokeWidth={1.5} />,
 };
-const defaultIcon = <Server size={15} strokeWidth={1.5} />;
+const defaultIcon = <Server size={14} strokeWidth={1.5} />;
 
 function Icon({ name }: { name: string }) {
   return <>{iconMap[name] ?? defaultIcon}</>;
@@ -35,7 +35,9 @@ function Icon({ name }: { name: string }) {
 function SideNavLink({ to, icon, label }: { to: string; icon: string; label: string }) {
   return (
     <NavLink to={to} className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
-      <Icon name={icon} />
+      <span className="ni" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={icon} />
+      </span>
       {label}
     </NavLink>
   );
@@ -47,11 +49,41 @@ export function SidebarNav() {
   const navigate = useNavigate();
 
   return (
-    <nav className="sidebar">
+    <aside className="sidebar">
+      {/* Sidebar Header / Logo Section */}
       <div className="sidebar-logo">
-        <span style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-0.02em' }}>HostPanel</span>
+        <div className="logo-badge">
+          <span style={{ fontSize: '11px', fontWeight: 700, color: '#fff', letterSpacing: '-0.03em' }}>HP</span>
+        </div>
+        <div>
+          <div className="logo-name" style={{ fontSize: '13px', fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text)' }}>
+            HostPanel
+          </div>
+          <div className="logo-ver" style={{ fontSize: '9px', color: 'var(--text-3)' }}>
+            v2.4.1 · {user?.username || 'root'}
+          </div>
+        </div>
+        <ThemePicker />
       </div>
 
+      {/* Sidebar Search Section */}
+      <div className="sidebar-search" style={{ padding: '0 12px 10px', marginTop: '10px' }}>
+        <div className="sidebar-search-inner" style={{
+          display: 'flex', alignItems: 'center', gap: '8px',
+          background: 'var(--surface2, var(--bg-3))', border: '1px solid var(--border2, var(--border))',
+          borderRadius: '7px', padding: '6px 10px', height: '30px', cursor: 'text'
+        }}>
+          <Search size={12} className="text-muted" style={{ strokeWidth: 1.5, flexShrink: 0, color: 'var(--text-3)' }} />
+          <span style={{ fontSize: '12px', color: 'var(--text-3)', flex: 1 }}>Quick search…</span>
+          <span className="mono" style={{
+            fontSize: '9px', color: 'var(--text-3)',
+            background: 'var(--surface, var(--bg-2))', border: '1px solid var(--border2, var(--border))',
+            borderRadius: '3px', padding: '1px 4px'
+          }}>⌘K</span>
+        </div>
+      </div>
+
+      {/* Sidebar Navigation Body */}
       <div className="nav-body">
         {sections
           .filter(s => !s.adminOnly || isAdmin)
@@ -72,26 +104,36 @@ export function SidebarNav() {
           ))}
       </div>
 
+      {/* Sidebar Footer / User Profile Section */}
       <div className="sidebar-footer">
-        <ThemePicker />
-        <div className="user-row">
-          <div className="user-avatar">{(user?.username?.[0] ?? 'A').toUpperCase()}</div>
+        <div className="user-row" style={{ borderTop: 'none', marginTop: 0, paddingTop: 0 }}>
+          <div className="avatar" style={{
+            width: '26px', height: '26px', borderRadius: '6px',
+            background: 'var(--accent-dim)', border: '1px solid var(--accent-border)',
+            display: 'grid', placeItems: 'center',
+            fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--accent-fg, var(--accent))',
+            flexShrink: 0
+          }}>
+            {(user?.username?.[0] ?? 'A').toUpperCase()}
+          </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="user-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text)' }}>
               {user?.username}
             </div>
-            <div className="user-role">{user?.role}</div>
+            <div className="mono" style={{ fontSize: '9.5px', color: 'var(--text-3)' }}>
+              {user?.role || 'Administrator'} · active
+            </div>
           </div>
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => { logout(); navigate('/login'); }}
             title="Log out"
-            style={{ padding: '5px', flexShrink: 0 }}
+            style={{ padding: '5px', flexShrink: 0, border: 'none', background: 'none' }}
           >
-            <LogOut size={14} strokeWidth={1.5} />
+            <LogOut size={13} strokeWidth={1.5} color="var(--text-3)" />
           </button>
         </div>
       </div>
-    </nav>
+    </aside>
   );
 }
