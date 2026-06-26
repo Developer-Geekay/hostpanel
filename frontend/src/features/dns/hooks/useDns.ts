@@ -113,7 +113,7 @@ export function useDns() {
     zones, zonesLoading, selectedZone, setSelectedZone, setRecords,
     addZoneOpen, setAddZoneOpen, newZone, setNewZone, savingZone,
     deleteZoneTarget, setDeleteZoneTarget,
-    addZone, confirmDeleteZone, loadRecords,
+    addZone, confirmDeleteZone, loadRecords, loadZones,
     records, filteredRecords, recordsLoading, typeFilter, setTypeFilter,
     addRecordOpen, setAddRecordOpen, recordForm, setRecordForm, savingRecord,
     deleteRecordTarget, setDeleteRecordTarget,
