@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Settings2, Package, Users, Globe,
   FolderOpen, Terminal, Lock, Database, LogOut, Server,
-  Wifi, ArrowLeftRight, HardDrive, ScrollText, Mail, Search,
+  Wifi, ArrowLeftRight, HardDrive, ScrollText, Mail,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { usePlugins } from '../../lib/plugins';
