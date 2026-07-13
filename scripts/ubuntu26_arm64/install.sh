@@ -11,7 +11,15 @@ PDNS_VERSION="4.9.3"
 # ── Paths ─────────────────────────────────────────────────────────────────────
 INSTALL_ROOT="/opt/hostpanel"
 BUILD_TMP="/tmp/hostpanel-build"
-SERVICE_USER="${SUDO_USER:-$(logname 2>/dev/null || whoami)}"
+
+# ── Identity ──────────────────────────────────────────────────────────────────
+# The panel runs under a dedicated, non-login system account that owns
+# /opt/hostpanel — NOT whoever happens to run the installer. INVOKING_USER is
+# remembered only so we can optionally grant that human console access later.
+PANEL_USER="${PANEL_USER:-hostpanel}"
+INVOKING_USER="${SUDO_USER:-$(logname 2>/dev/null || whoami)}"
+SERVICE_USER="$PANEL_USER"
+GRANT_CONSOLE="n"
 
 # ── Colors & helpers ──────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -67,6 +75,7 @@ if [[ -f "$ENV_FILE_EXISTING" ]]; then
     PANEL_SUBDOMAIN=$(_env PANEL_SUBDOMAIN)
     ADMIN_USER=$(_env DEFAULT_USERNAME)
     ADMIN_PASS=$(_env DEFAULT_PASSWORD)
+    PANEL_USER=$(_env PANEL_USER); PANEL_USER="${PANEL_USER:-hostpanel}"; SERVICE_USER="$PANEL_USER"
     PDNS_NS1=$(_env PDNS_NS1)
     PDNS_NS2=$(_env PDNS_NS2)
     CERTBOT_EMAIL=$(_env CERTBOT_EMAIL)
@@ -88,7 +97,7 @@ else
     read -rp "Panel subdomain [cpanel]: " PANEL_SUBDOMAIN
     PANEL_SUBDOMAIN="${PANEL_SUBDOMAIN:-cpanel}"
 
-    read -rp "Admin username [admin]: " ADMIN_USER
+    read -rp "Panel admin web-login username [admin] (portal login, NOT a Linux user): " ADMIN_USER
     ADMIN_USER="${ADMIN_USER:-admin}"
 
     read -rsp "Admin password: " ADMIN_PASS; echo
@@ -97,6 +106,13 @@ else
     read -rp "PowerDNS NS1 FQDN (e.g. ns1.example.com.): " PDNS_NS1
     read -rp "PowerDNS NS2 FQDN (e.g. ns2.example.com.): " PDNS_NS2
     read -rp "Let's Encrypt / certbot email: " CERTBOT_EMAIL
+
+    # The panel runs as the dedicated '$PANEL_USER' account; optionally let the
+    # human who ran the installer read/manage panel files from a console shell.
+    if [[ -n "$INVOKING_USER" && "$INVOKING_USER" != "$PANEL_USER" ]]; then
+        read -rp "Grant your login user '${INVOKING_USER}' console access to panel files? [y/N]: " GRANT_CONSOLE
+        GRANT_CONSOLE="${GRANT_CONSOLE:-n}"
+    fi
 
     SECRET_KEY=$(openssl rand -hex 32)
 fi
@@ -136,6 +152,18 @@ step "2 / 8 — Directory structure"
 
 mkdir -p "$INSTALL_ROOT"/{dns/{sbin,etc/pdns,var/lib,var/run},frontend,backend/logs,plugins,bin}
 mkdir -p "$BUILD_TMP"
+
+# ── Panel service account (dedicated, non-login) ─────────────────────────────
+# Created here — before any chown — so ownership can point at it. Idempotent:
+# safe to re-run. This is the account the daemon runs as and that owns
+# /opt/hostpanel; it is deliberately NOT the user who ran the installer.
+groupadd -f hostpanel
+if ! id "$PANEL_USER" &>/dev/null; then
+    useradd --system --home-dir "$INSTALL_ROOT" --shell /usr/sbin/nologin \
+            --comment "HostPanel service account" "$PANEL_USER"
+    info "Created system user '$PANEL_USER'."
+fi
+usermod -aG hostpanel "$PANEL_USER"
 
 chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_ROOT"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_ROOT/frontend"
@@ -316,9 +344,17 @@ info "systemd services installed and enabled."
 step "6 / 8 — hostpanel group + core sudoers"
 # =============================================================================
 
+# Group + service-account membership are established in step 2; re-assert here
+# idempotently so this step is correct even if run standalone.
 groupadd -f hostpanel
 usermod -aG hostpanel "$SERVICE_USER"
-info "User '${SERVICE_USER}' added to 'hostpanel' group."
+info "Service account '${SERVICE_USER}' is in the 'hostpanel' group."
+
+# Optional: give the human who ran the installer console access to panel files.
+if [[ "$GRANT_CONSOLE" =~ ^[Yy]$ && -n "$INVOKING_USER" && "$INVOKING_USER" != "$PANEL_USER" ]]; then
+    usermod -aG hostpanel "$INVOKING_USER"
+    info "Added '$INVOKING_USER' to 'hostpanel' group (log out/in for it to take effect)."
+fi
 
 cat > /etc/sudoers.d/hostpanel << 'SUDOERS'
 # HostPanel core sudoers -- managed by install.sh
@@ -429,6 +465,7 @@ else
 ENVIRONMENT=production
 SECRET_KEY=${SECRET_KEY}
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
+PANEL_USER=${PANEL_USER}
 DEFAULT_USERNAME=${ADMIN_USER}
 DEFAULT_PASSWORD=${ADMIN_PASS}
 FRONTEND_URLS=http://${SERVER_IP}:2082
