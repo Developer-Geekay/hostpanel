@@ -54,5 +54,6 @@ def _save_subdomains(subdomains: List[dict]):
 
 
 def check_domain_access(domain_record: dict, current_user) -> None:
-    if current_user.role != "admin" and domain_record.get("username") != current_user.linux_user:
-        raise HTTPException(status_code=403, detail="Access denied")
+    # Delegates to the shared ownership primitive so the rule lives in one place.
+    from deps import assert_owner
+    assert_owner(current_user, domain_record.get("username"))

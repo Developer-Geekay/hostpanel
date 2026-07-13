@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 
 from auth import User, get_password_hash
-from deps import get_current_user, require_admin
+from deps import get_current_user, require_admin, assert_owner
 from domain_registry import _load_domains
 from hooks import call_hooks
 from modules.audit.logger import log_action
@@ -82,8 +82,7 @@ async def create_user(req: UserCreateRequest, current_user: User = Depends(requi
 @router.get("/{username}")
 async def get_user(username: str, current_user: User = Depends(get_current_user)):
     _guard(username)
-    if current_user.role != "admin" and current_user.linux_user != username:
-        raise HTTPException(status_code=403, detail="Access denied")
+    assert_owner(current_user, username)
     try:
         return sys_users.get_user(username)
     except UserNotFound as e:
@@ -163,8 +162,7 @@ async def delete_user(username: str, remove_home: bool = True, current_user: Use
 @router.put("/{username}/password")
 async def change_password(username: str, req: PasswordChangeRequest, current_user: User = Depends(get_current_user)):
     _guard(username)
-    if current_user.role != "admin" and current_user.linux_user != username:
-        raise HTTPException(status_code=403, detail="Access denied")
+    assert_owner(current_user, username)
     try:
         sys_users.change_password(username, req.new_password)
     except UserOperationFailed as e:

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List
 
 from auth import User
-from deps import get_current_user, require_admin
+from deps import get_current_user, require_admin, assert_owner
 from modules.audit.logger import log_action
 from modules.ssh import keys as ssh_keys
 from modules.ssh.exceptions import DuplicateKey, InvalidKeyFormat, KeyNotFound
@@ -25,8 +25,7 @@ class AddKeyRequest(BaseModel):
 
 
 def _check_access(linux_user: str, current_user: User) -> None:
-    if current_user.role != "admin" and current_user.linux_user != linux_user:
-        raise HTTPException(status_code=403, detail="Access denied")
+    assert_owner(current_user, linux_user)
 
 
 def _resolve_linux_user(username: str | None, current_user: User) -> str:

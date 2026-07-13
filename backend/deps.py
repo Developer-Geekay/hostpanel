@@ -58,3 +58,24 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
             detail="Admin access required",
         )
     return current_user
+
+
+def user_owns(current_user: User, owner: Optional[str]) -> bool:
+    """True if the user may act on a resource owned by Linux user `owner`.
+
+    Admins may act on anything; a tenant may act only on resources whose owner
+    matches their bound `linux_user`. This is the single source of truth for the
+    ownership check that used to be inlined in several routers.
+    """
+    if current_user.role == "admin":
+        return True
+    return current_user.linux_user is not None and current_user.linux_user == owner
+
+
+def assert_owner(current_user: User, owner: Optional[str]) -> None:
+    """Raise 403 unless `current_user` is an admin or owns the resource."""
+    if not user_owns(current_user, owner):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )

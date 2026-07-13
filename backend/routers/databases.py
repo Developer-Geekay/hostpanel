@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 
 from auth import User
-from deps import get_current_user
+from deps import get_current_user, assert_owner
 from modules.audit.logger import log_action
 from modules.databases import mysql as db_mysql
 from modules.databases.exceptions import DatabaseNotFound, DatabaseAlreadyExists, DatabaseOperationFailed
@@ -62,8 +62,7 @@ async def delete_mysql_database(db_name: str, current_user: User = Depends(get_c
 
     if not target:
         raise HTTPException(status_code=404, detail="Database not found.")
-    if current_user.role != "admin" and target.get("owner") != current_user.linux_user:
-        raise HTTPException(status_code=403, detail="Access denied")
+    assert_owner(current_user, target.get("owner"))
 
     try:
         db_mysql.delete_database(db_name)
