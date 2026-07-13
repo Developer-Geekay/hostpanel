@@ -26,3 +26,4 @@ from .ssl import router as ssl_router
 from .services import router as services_router
 from .packages import router as packages_router
 from .mail import router as mail_router
+from .system import router as system_router
