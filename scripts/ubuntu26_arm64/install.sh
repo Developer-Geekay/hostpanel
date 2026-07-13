@@ -377,8 +377,8 @@ cat > /etc/sudoers.d/hostpanel << 'SUDOERS'
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 700 *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 750 *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 755 *
-%hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod 777 *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 *
+# chmod 777 grant removed — no caller remains (webroots are tenant-owned now).
 
 # -- Directory / file management ----------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/mkdir -p *
@@ -386,6 +386,17 @@ cat > /etc/sudoers.d/hostpanel << 'SUDOERS'
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/rm -f *
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/rm -rf *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/visudo -c -f *
+
+# -- Tenant privilege demotion: run per-tenant file ops AS the owning user, ----
+# -- never as root. Runas is (ALL, !root) so these can never target root.  -----
+# -- Consumed by modules/system/identity.run_as(); lets webroot/mailbox/etc  ---
+# -- be created natively owned by the tenant instead of root-then-chown.    ---
+%hostpanel ALL=(ALL, !root) NOPASSWD: /usr/bin/mkdir -p *
+%hostpanel ALL=(ALL, !root) NOPASSWD: /usr/bin/tee *
+%hostpanel ALL=(ALL, !root) NOPASSWD: /usr/bin/test *
+%hostpanel ALL=(ALL, !root) NOPASSWD: /usr/bin/rm -f *
+%hostpanel ALL=(ALL, !root) NOPASSWD: /usr/bin/chmod 644 *
+%hostpanel ALL=(ALL, !root) NOPASSWD: /usr/bin/chmod 755 *
 
 # -- Ownership wrapper (chown -R with dynamic user) ---------------------------
 %hostpanel ALL=(root) NOPASSWD: /opt/hostpanel/bin/hp-chown *
