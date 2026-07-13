@@ -27,7 +27,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from auth import Token, create_access_token, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES
+from auth import Token, create_access_token, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES, SECRET_KEY
 from deps import get_current_user, oauth2_scheme
 from audit import log_action
 from db import init_db
@@ -101,8 +101,62 @@ app = FastAPI(
     openapi_url=kwargs.get("openapi_url", "/openapi.json")
 )
 
+def _enforce_production_safety():
+    """Refuse to boot in production with known-insecure defaults.
+
+    A missing/misconfigured .env must fail loudly, not silently ship a
+    forgeable JWT key or a well-known admin password.
+    """
+    if os.environ.get("ENVIRONMENT") != "production":
+        return
+    problems = []
+    if not SECRET_KEY or SECRET_KEY == "insecure-secret-key-change-me":
+        problems.append("SECRET_KEY is unset or the insecure default")
+    if default_password == "admin":
+        problems.append("DEFAULT_PASSWORD is the well-known default 'admin'")
+    if problems:
+        for p in problems:
+            logger.critical("Refusing to start in production: %s", p)
+        raise RuntimeError(
+            "Insecure production configuration: " + "; ".join(problems)
+            + ". Set a strong SECRET_KEY and DEFAULT_PASSWORD in backend/.env."
+        )
+
+
+def _check_runtime_identity():
+    """Log a warning if the process identity doesn't match the panel account.
+
+    Never raises — this is a drift alarm, not a gate.
+    """
+    try:
+        import getpass
+        import grp
+        panel_user = os.environ.get("PANEL_USER", "hostpanel")
+        actual = getpass.getuser()
+        if actual != panel_user:
+            logger.warning(
+                "Running as OS user '%s' but PANEL_USER is '%s' — identity drift; "
+                "file ownership under /opt/hostpanel may conflict.", actual, panel_user
+            )
+        try:
+            hostpanel_gid = grp.getgrnam("hostpanel").gr_gid
+            member = (hostpanel_gid == os.getgid()
+                      or "hostpanel" in {g.gr_name for g in grp.getgrall() if actual in g.gr_mem})
+            if not member:
+                logger.warning(
+                    "OS user '%s' is not in the 'hostpanel' group — privileged panel "
+                    "operations (sudo helpers) may fail.", actual
+                )
+        except KeyError:
+            logger.warning("The 'hostpanel' group does not exist — installer may not have run.")
+    except Exception as e:
+        logger.warning("Runtime identity self-check skipped: %s", e)
+
+
 @app.on_event("startup")
 async def startup_event():
+    _enforce_production_safety()
+    _check_runtime_identity()
     init_db()
     ensure_admin_exists(default_username, default_password)
     logger.info("HostPanel API is starting up...")
