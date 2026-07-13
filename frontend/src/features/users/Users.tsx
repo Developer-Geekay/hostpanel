@@ -171,7 +171,7 @@ export default function Users() {
           </div>
 
           {/* RIGHT: User Detail or Add User form */}
-          <div className="split-right">
+          <div className="split-right" style={{ paddingLeft: '20px' }}>
             {u.addOpen ? (
               /* CREATE USER SCREEN */
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>

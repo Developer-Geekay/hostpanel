@@ -350,7 +350,7 @@ export default function Services() {
           </div>
 
           {/* RIGHT: service detail */}
-          <div className="split-right">
+          <div className="split-right" style={{ paddingLeft: '20px' }}>
             {selectedSvc ? (
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
                 {/* Detail Header */}

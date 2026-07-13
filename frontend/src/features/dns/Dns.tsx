@@ -186,7 +186,7 @@ export default function Dns() {
           </div>
 
           {/* RIGHT: Zone Details */}
-          <div className="split-right">
+          <div className="split-right" style={{ paddingLeft: '20px' }}>
             {dns.selectedZone ? (
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
                 
@@ -220,7 +220,7 @@ export default function Dns() {
 
                 {/* Main Scroll Pane */}
                 <div className="split-scroll" style={{ padding: '16px 18px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
                     
                     {/* Inline Add Record Panel */}
                     {recordAddingOpen ? (

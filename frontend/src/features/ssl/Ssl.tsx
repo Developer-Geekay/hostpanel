@@ -155,7 +155,7 @@ export default function Ssl() {
           </div>
 
           {/* RIGHT: Detail View or Wizard */}
-          <div className="split-right">
+          <div className="split-right" style={{ paddingLeft: '20px' }}>
             {wizardActive && selectedCert ? (
               /* WIZARD SCREEN */
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
