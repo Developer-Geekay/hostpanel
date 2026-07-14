@@ -64,11 +64,12 @@ def all_services() -> list[dict]:
         svc = module.get("service")
         if svc:
             services.append({
-                "name":       svc["name"],
-                "unit":       svc["unit"],
-                "label":      svc.get("label", svc["name"].capitalize()),
-                "icon":       svc.get("icon", "settings"),
-                "can_reload": svc.get("can_reload", False),
+                "name":        svc["name"],
+                "unit":        svc["unit"],
+                "label":       svc.get("label", svc["name"].capitalize()),
+                "icon":        svc.get("icon", "settings"),
+                "can_reload":  svc.get("can_reload", False),
+                "config_path": svc.get("config_path"),
             })
     return services
 

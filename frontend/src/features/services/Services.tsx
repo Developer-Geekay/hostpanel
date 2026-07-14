@@ -9,6 +9,7 @@ import { PageSpinner } from '../../components/ui/Spinner';
 import { useToast } from '../../components/ui/Toast';
 import { useServices } from './hooks/useServices';
 import { LogPanel } from './components/LogPanel';
+import { apiGet, apiPut } from '../../lib/api';
 
 // Metadata configuration mapping for known system services
 const serviceMeta: Record<string, {
@@ -223,6 +224,9 @@ export default function Services() {
   const [selectedSvcName, setSelectedSvcName] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'logs' | 'config' | 'stats'>('logs');
   const [configText, setConfigText] = useState('');
+  const [configPath, setConfigPath] = useState('');
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configError, setConfigError] = useState('');
   const [isEditingConfig, setIsEditingConfig] = useState(false);
   const toast = useToast();
 
@@ -236,23 +240,40 @@ export default function Services() {
   const selectedSvc = services.find(s => s.name === selectedSvcName) || null;
   const meta = selectedSvc ? getServiceMeta(selectedSvc.name) : null;
 
-  // Reset editor state when switching services
-  useEffect(() => {
-    if (meta) {
-      setConfigText(meta.configContent);
-      setIsEditingConfig(false);
-    }
-  }, [selectedSvcName]);
-
-  const handleSaveConfig = () => {
-    toast.ok(`Configuration for ${selectedSvc?.name} saved successfully.`);
+  // Load the REAL config file from the server when the Config tab is opened.
+  const loadConfig = async (name: string) => {
+    setConfigLoading(true);
+    setConfigError('');
     setIsEditingConfig(false);
-    if (selectedSvc) {
-      if (selectedSvc.can_reload) {
-        serviceAction(selectedSvc.name, 'reload');
-      } else {
-        serviceAction(selectedSvc.name, 'restart');
-      }
+    try {
+      const data = await apiGet<{ path: string; content: string }>(`services/${name}/config`);
+      setConfigPath(data.path);
+      setConfigText(data.content);
+    } catch (e: unknown) {
+      setConfigError(e instanceof Error ? e.message : 'Failed to load configuration');
+      setConfigText('');
+      setConfigPath('');
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'config' && selectedSvc?.config_path) {
+      loadConfig(selectedSvc.name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSvcName, activeTab]);
+
+  const handleSaveConfig = async () => {
+    if (!selectedSvc) return;
+    try {
+      await apiPut(`services/${selectedSvc.name}/config`, { content: configText });
+      toast.ok(`Configuration saved for ${selectedSvc.name}.`);
+      setIsEditingConfig(false);
+      serviceAction(selectedSvc.name, selectedSvc.can_reload ? 'reload' : 'restart');
+    } catch (e: unknown) {
+      toast.err(e instanceof Error ? e.message : 'Failed to save configuration');
     }
   };
 
@@ -445,14 +466,16 @@ export default function Services() {
                       <ScrollText size={12} strokeWidth={1.5} /> Logs
                     </span>
                   </div>
-                  <div
-                    className={`tab${activeTab === 'config' ? ' active' : ''}`}
-                    onClick={() => setActiveTab('config')}
-                  >
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <Settings2 size={12} strokeWidth={1.5} /> Config
-                    </span>
-                  </div>
+                  {selectedSvc?.config_path && (
+                    <div
+                      className={`tab${activeTab === 'config' ? ' active' : ''}`}
+                      onClick={() => setActiveTab('config')}
+                    >
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Settings2 size={12} strokeWidth={1.5} /> Config
+                      </span>
+                    </div>
+                  )}
                   <div
                     className={`tab${activeTab === 'stats' ? ' active' : ''}`}
                     onClick={() => setActiveTab('stats')}
@@ -478,7 +501,7 @@ export default function Services() {
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                         <div className="mono" style={{ fontSize: '11px', color: 'var(--text-3)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {meta?.configPath}
+                          {configLoading ? 'Loading…' : configPath}
                         </div>
                         {isEditingConfig ? (
                           <>
@@ -486,7 +509,7 @@ export default function Services() {
                               variant="ghost"
                               size="sm"
                               icon={<RotateCcw size={12} />}
-                              onClick={() => { setConfigText(meta?.configContent || ''); setIsEditingConfig(false); }}
+                              onClick={() => { selectedSvc && loadConfig(selectedSvc.name); }}
                             >
                               Cancel
                             </Button>
@@ -511,6 +534,12 @@ export default function Services() {
                           </Button>
                         )}
                       </div>
+
+                      {configError && (
+                        <div style={{ marginBottom: '12px', fontSize: '12px', color: 'var(--err)' }}>
+                          {configError}
+                        </div>
+                      )}
 
                       {isEditingConfig ? (
                         <textarea

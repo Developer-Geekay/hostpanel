@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -7,6 +7,7 @@ from deps import require_admin
 from modules.audit.logger import log_action
 from modules.services import systemd as svc_svc
 from modules.services import journal as journal_svc
+from modules.services import config as config_svc
 from modules.services.exceptions import ServiceNotFound, ServiceActionFailed, ServiceActionTimeout
 
 router = APIRouter(prefix="/cpanelapi/services", tags=["Services"])
@@ -19,6 +20,11 @@ class ServiceStatus(BaseModel):
     label: str
     icon: str
     can_reload: bool
+    config_path: Optional[str] = None
+
+
+class ServiceConfigUpdate(BaseModel):
+    content: str
 
 
 def _require_service(name: str) -> dict:
@@ -44,9 +50,37 @@ async def list_services(_: User = Depends(require_admin)):
             name=s["name"], unit=s["unit"], label=s["label"],
             icon=s["icon"], can_reload=s["can_reload"],
             status=svc_svc.get_status(s["unit"]),
+            config_path=s.get("config_path"),
         )
         for s in svc_svc.all_services()
     ]
+
+
+@router.get("/{name}/config")
+async def get_service_config(name: str, _: User = Depends(require_admin)):
+    svc = _require_service(name)
+    path = svc.get("config_path")
+    if not path:
+        raise HTTPException(status_code=404, detail="This service has no editable config file.")
+    try:
+        content = config_svc.read_config(path)
+    except ServiceActionFailed as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"name": name, "path": path, "content": content}
+
+
+@router.put("/{name}/config")
+async def put_service_config(name: str, body: ServiceConfigUpdate, user: User = Depends(require_admin)):
+    svc = _require_service(name)
+    path = svc.get("config_path")
+    if not path:
+        raise HTTPException(status_code=404, detail="This service has no editable config file.")
+    try:
+        config_svc.write_config(path, body.content)
+    except ServiceActionFailed as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    log_action(user.username, "service.config_write", name, detail=path)
+    return {"name": name, "path": path, "message": "Configuration written"}
 
 
 @router.post("/{name}/start")

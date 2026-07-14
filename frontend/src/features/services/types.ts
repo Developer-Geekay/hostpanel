@@ -5,6 +5,7 @@ export interface Service {
   label: string;
   icon?: string;
   can_reload: boolean;
+  config_path?: string | null;
 }
 
 export interface LogResponse {
