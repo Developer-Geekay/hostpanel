@@ -59,7 +59,7 @@ fi
 
 # ── 1. Sync backend ───────────────────────────────────────────────────────────
 echo -e "${GREEN}Syncing backend → ${REMOTE_APP_DIR}...${NC}"
-rsync -avz --delete \
+rsync -avz --no-perms --no-owner --no-group --omit-dir-times --delete \
     -e "ssh ${SSH_OPTS}" \
     --exclude 'venv' \
     --exclude '__pycache__' \
@@ -107,13 +107,13 @@ npm run build
 # Two-pass sync: core files with --delete (safe), then packages/ without --delete
 # (so server-installed plugin dirs like packages/nginx/ are never wiped by deploy).
 echo -e "${GREEN}Syncing frontend → ${REMOTE_FRONTEND_DIR}...${NC}"
-rsync -avz --delete \
+rsync -avz --no-perms --no-owner --no-group --omit-dir-times --delete \
     --exclude 'packages/' \
     -e "ssh ${SSH_OPTS}" \
     dist/ \
     ${SERVER_USER}@${SERVER_IP}:${REMOTE_FRONTEND_DIR}/
 
-rsync -avz \
+rsync -avz --no-perms --no-owner --no-group --omit-dir-times \
     -e "ssh ${SSH_OPTS}" \
     dist/packages/ \
     ${SERVER_USER}@${SERVER_IP}:${REMOTE_FRONTEND_DIR}/packages/
