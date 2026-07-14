@@ -410,7 +410,7 @@ cat > /etc/sudoers.d/hostpanel << 'SUDOERS'
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/useradd *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/userdel *
 %hostpanel ALL=(root) NOPASSWD: /usr/sbin/usermod *
-%hostpanel ALL=(root) NOPASSWD: /usr/bin/chpasswd
+%hostpanel ALL=(root) NOPASSWD: /usr/sbin/chpasswd
 
 # -- SSL (certbot) ------------------------------------------------------------
 %hostpanel ALL=(root) NOPASSWD: /usr/bin/certbot *
