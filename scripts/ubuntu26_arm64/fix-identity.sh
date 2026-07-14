@@ -50,12 +50,12 @@ if [[ -f "$ENV_FILE" ]] && ! grep -q '^PANEL_USER=' "$ENV_FILE"; then
     info "Recorded PANEL_USER in $ENV_FILE."
 fi
 
-# 3. Re-own the tree to the service account (bin/ stays root:root — privileged wrappers).
+# 3. Re-own the whole tree to the service account, then restore bin/ (privileged
+#    root-owned wrappers). Recursive on the ROOT so top-level files are included —
+#    a per-subdir chown leaves hostpanel.db (+ *.json) owned by the old user, and
+#    the panel then can't write the database ("attempt to write a readonly database").
 info "Re-owning $INSTALL_ROOT to $PANEL_USER (this may take a moment)..."
-chown "$PANEL_USER:$PANEL_USER" "$INSTALL_ROOT"
-for sub in frontend backend plugins dns; do
-    [[ -d "$INSTALL_ROOT/$sub" ]] && chown -R "$PANEL_USER:$PANEL_USER" "$INSTALL_ROOT/$sub"
-done
+chown -R "$PANEL_USER:$PANEL_USER" "$INSTALL_ROOT"
 [[ -d "$INSTALL_ROOT/bin" ]] && chown -R root:root "$INSTALL_ROOT/bin"
 
 # 4. Point the systemd unit at the service account.
