@@ -74,6 +74,24 @@ else
     warn "$UNIT not found — skipping unit fix."
 fi
 
+# 4b. Re-point ALL other hostpanel package service units at the service account.
+# Package services (mongodb, php-fpm, etc.) run as User= and read/write data under
+# /opt/hostpanel/plugins, which is now hostpanel-owned. A stale old-user unit can't
+# write its data/logs and crash-loops (e.g. mongod: FileNotOpen on mongod.log).
+for u in /etc/systemd/system/hostpanel-*.service; do
+    [[ -e "$u" ]] || continue
+    [[ "$u" == "$UNIT" ]] && continue          # hostpanel-api handled above
+    cur=$(grep -m1 '^User=' "$u" | cut -d= -f2- || true)
+    if [[ -n "$cur" && "$cur" != "$PANEL_USER" ]]; then
+        svc=$(basename "$u" .service)
+        sed -i "s/^User=.*/User=$PANEL_USER/" "$u"
+        systemctl daemon-reload
+        systemctl reset-failed "$svc" 2>/dev/null || true
+        systemctl restart "$svc" 2>/dev/null || warn "Could not restart $svc — check: journalctl -u $svc"
+        info "Re-pointed $svc: User=$cur -> User=$PANEL_USER"
+    fi
+done
+
 echo
 info "Done. The panel now runs as '$PANEL_USER'."
 info "If you want your login user to manage panel files from a console shell:"
