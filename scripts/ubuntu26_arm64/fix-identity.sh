@@ -78,11 +78,14 @@ fi
 # Package services (mongodb, php-fpm, etc.) run as User= and read/write data under
 # /opt/hostpanel/plugins, which is now hostpanel-owned. A stale old-user unit can't
 # write its data/logs and crash-loops (e.g. mongod: FileNotOpen on mongod.log).
+# Only re-point units still running as the OLD login user ($INVOKING_USER).
+# Leave tenant-scoped services alone — e.g. per-app Node processes correctly run
+# as the domain's hosting user, which must NOT be rewritten to the panel account.
 for u in /etc/systemd/system/hostpanel-*.service; do
     [[ -e "$u" ]] || continue
     [[ "$u" == "$UNIT" ]] && continue          # hostpanel-api handled above
     cur=$(grep -m1 '^User=' "$u" | cut -d= -f2- || true)
-    if [[ -n "$cur" && "$cur" != "$PANEL_USER" ]]; then
+    if [[ -n "$cur" && "$cur" == "$INVOKING_USER" && "$cur" != "$PANEL_USER" ]]; then
         svc=$(basename "$u" .service)
         sed -i "s/^User=.*/User=$PANEL_USER/" "$u"
         systemctl daemon-reload
