@@ -159,7 +159,9 @@ mkdir -p "$BUILD_TMP"
 # /opt/hostpanel; it is deliberately NOT the user who ran the installer.
 groupadd -f hostpanel
 if ! id "$PANEL_USER" &>/dev/null; then
-    useradd --system --home-dir "$INSTALL_ROOT" --shell /usr/sbin/nologin \
+    # -g hostpanel: use the existing group as primary. Without it useradd tries
+    # to create a private group of the same name and fails (it already exists).
+    useradd --system -g hostpanel --home-dir "$INSTALL_ROOT" --shell /usr/sbin/nologin \
             --comment "HostPanel service account" "$PANEL_USER"
     info "Created system user '$PANEL_USER'."
 fi
