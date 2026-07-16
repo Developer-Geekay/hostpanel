@@ -49,7 +49,7 @@ from routers import (
 
 load_dotenv()
 
-CORE_VERSION = (1, 0, 0)
+CORE_VERSION = (1, 1, 0)  # 1.1.0: plugin `public_routers` (self-authenticating routes)
 
 # ── SPA static file handler ────────────────────────────────────────────────────
 # Falls back to index.html for any path not matched by a real file so Angular's
@@ -246,6 +246,15 @@ try:
             elif hasattr(plugin_module, 'router'):
                 app.include_router(plugin_module.router, dependencies=[Depends(get_current_user)])
                 logger.info(f"Dynamically loaded router from plugin: {ep.name}")
+
+            # Self-authenticating plugin routers (machine-to-machine endpoints
+            # such as CI deploy tokens / GitHub OIDC). Mounted WITHOUT the
+            # panel-session wrapper — every route on these routers must
+            # enforce its own credential check and audit its rejections.
+            if hasattr(plugin_module, 'public_routers'):
+                for r in plugin_module.public_routers:
+                    app.include_router(r)
+                logger.info(f"Loaded {len(plugin_module.public_routers)} self-authenticating router(s) from plugin: {ep.name}")
         except Exception as e:
             logger.error(f"Failed to load plugin {ep.name}: {e}")
 except Exception as e:
