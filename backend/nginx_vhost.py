@@ -39,13 +39,40 @@ def _nodejs_port(domain: str):
         return None
 
 
+# Anything outside this shape never reaches the config — nginx directive
+# injection through a route path ("/x/ { ... }") must be impossible here
+# regardless of what the plugin stored.
+_ROUTE_PATH_RE = None
+
+
+def _safe_routes(routes: list) -> list:
+    import re
+    global _ROUTE_PATH_RE
+    if _ROUTE_PATH_RE is None:
+        _ROUTE_PATH_RE = re.compile(r"^(/[A-Za-z0-9._-]+)+$")
+    safe = []
+    for route in routes:
+        try:
+            path = str(route["path"])
+            port = int(route["port"])
+        except Exception:
+            continue
+        if not _ROUTE_PATH_RE.fullmatch(path) or ".." in path or len(path) > 128:
+            continue
+        if not (1 <= port <= 65535):
+            continue
+        safe.append({"path": path, "port": port, "strip_prefix": bool(route.get("strip_prefix", True))})
+    return safe
+
+
 def _nodejs_routes(domain: str) -> list:
-    """Custom per-app reverse-proxy routes declared in the nodejs plugin
-    (loopback upstreams only, validated plugin-side). Older plugin versions
-    don't have the accessor — treat as no routes."""
+    """Custom per-app reverse-proxy routes declared in the nodejs plugin.
+    Older plugin versions don't have the accessor — treat as no routes. The
+    plugin validates on write, but this renderer emits privileged config, so
+    it re-validates on read and drops anything off-shape."""
     try:
         from hostpanel_nodejs.store import get_routes_by_domain
-        return get_routes_by_domain(domain) or []
+        return _safe_routes(get_routes_by_domain(domain) or [])
     except Exception:
         return []
 
