@@ -15,7 +15,7 @@ def render_domain_vhost(domain: str, linux_user: str, cert_path: str = "", key_p
     port = _nodejs_port(domain)
     doc_root = f"/home/{linux_user}/public_html"
     if port:
-        return _proxy(domain, port, cert_path, key_path)
+        return _proxy(domain, port, cert_path, key_path, _nodejs_routes(domain))
     return _static(domain, doc_root, cert_path, key_path)
 
 
@@ -39,16 +39,42 @@ def _nodejs_port(domain: str):
         return None
 
 
-def _proxy(domain: str, port: int, cert_path: str, key_path: str) -> str:
-    proxy_block = f"""    location / {{
-        proxy_pass http://127.0.0.1:{port};
-        proxy_set_header Host $host;
+def _nodejs_routes(domain: str) -> list:
+    """Custom per-app reverse-proxy routes declared in the nodejs plugin
+    (loopback upstreams only, validated plugin-side). Older plugin versions
+    don't have the accessor — treat as no routes."""
+    try:
+        from hostpanel_nodejs.store import get_routes_by_domain
+        return get_routes_by_domain(domain) or []
+    except Exception:
+        return []
+
+
+_PROXY_HEADERS = """        proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+        proxy_set_header Connection "upgrade";"""
+
+
+def _proxy(domain: str, port: int, cert_path: str, key_path: str, routes: list = ()) -> str:
+    # Custom routes go before location / so their prefixes win; a trailing
+    # slash on proxy_pass makes nginx strip the matched prefix.
+    route_blocks = ""
+    for route in routes:
+        strip = "/" if route.get("strip_prefix", True) else ""
+        route_blocks += f"""    location {route['path']}/ {{
+        proxy_pass http://127.0.0.1:{int(route['port'])}{strip};
+{_PROXY_HEADERS}
+    }}
+
+"""
+
+    proxy_block = f"""{route_blocks}    location / {{
+        proxy_pass http://127.0.0.1:{port};
+{_PROXY_HEADERS}
     }}"""
 
     if cert_path:
