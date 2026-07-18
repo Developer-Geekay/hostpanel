@@ -43,13 +43,15 @@ def _nodejs_port(domain: str):
 # injection through a route path ("/x/ { ... }") must be impossible here
 # regardless of what the plugin stored.
 _ROUTE_PATH_RE = None
+_ROUTE_HOST_RE = None
 
 
 def _safe_routes(routes: list) -> list:
     import re
-    global _ROUTE_PATH_RE
+    global _ROUTE_PATH_RE, _ROUTE_HOST_RE
     if _ROUTE_PATH_RE is None:
         _ROUTE_PATH_RE = re.compile(r"^(/[A-Za-z0-9._-]+)+$")
+        _ROUTE_HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
     safe = []
     for route in routes:
         try:
@@ -57,11 +59,14 @@ def _safe_routes(routes: list) -> list:
             port = int(route["port"])
         except Exception:
             continue
+        host = str(route.get("host") or "127.0.0.1")
         if not _ROUTE_PATH_RE.fullmatch(path) or ".." in path or len(path) > 128:
+            continue
+        if not _ROUTE_HOST_RE.fullmatch(host) or ".." in host:
             continue
         if not (1 <= port <= 65535):
             continue
-        safe.append({"path": path, "port": port, "strip_prefix": bool(route.get("strip_prefix", True))})
+        safe.append({"path": path, "host": host, "port": port, "strip_prefix": bool(route.get("strip_prefix", True))})
     return safe
 
 
@@ -93,7 +98,7 @@ def _proxy(domain: str, port: int, cert_path: str, key_path: str, routes: list =
     for route in routes:
         strip = "/" if route.get("strip_prefix", True) else ""
         route_blocks += f"""    location {route['path']}/ {{
-        proxy_pass http://127.0.0.1:{int(route['port'])}{strip};
+        proxy_pass http://{route.get('host', '127.0.0.1')}:{int(route['port'])}{strip};
 {_PROXY_HEADERS}
     }}
 
