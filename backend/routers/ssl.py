@@ -349,7 +349,18 @@ async def renew_cert(root_domain: str, current_user: User = Depends(get_current_
 
 @router.delete("/{root_domain}")
 async def delete_cert(root_domain: str, current_user: User = Depends(get_current_user)):
-    _require_root_domain(root_domain, current_user)
+    # A cert record can outlive its provisioning — e.g. the domain was removed
+    # from Virtual Hosts while a (failed/pending/valid) cert row remained, leaving
+    # an orphan the SSL list shows but that _require_root_domain would 404 on.
+    # Tolerate the missing registry record (admin-only when absent) so the entry
+    # can always be cleared. Mirrors the access pattern in get_cert.
+    domains = _load_domains()
+    record = next((d for d in domains if d["domain_name"] == root_domain), None)
+    if record:
+        check_domain_access(record, current_user)
+    elif current_user.role != "admin":
+        raise HTTPException(403, "Access denied")
+
     cert = ssl_db.get_cert(root_domain)
     if not cert:
         raise HTTPException(404, f"No SSL record for '{root_domain}'.")

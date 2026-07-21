@@ -49,7 +49,7 @@ from routers import (
 
 load_dotenv()
 
-CORE_VERSION = (1, 1, 0)  # 1.1.0: plugin `public_routers` (self-authenticating routes)
+CORE_VERSION = (1, 1, 1)  # 1.1.1: SSL delete tolerates a domain no longer provisioned (orphan cert cleanup)
 
 # ── SPA static file handler ────────────────────────────────────────────────────
 # Falls back to index.html for any path not matched by a real file so Angular's
