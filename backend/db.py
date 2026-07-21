@@ -175,6 +175,12 @@ def _add_columns():
             conn.execute("ALTER TABLE wg_peers ADD COLUMN private_key TEXT")
         except Exception:
             pass  # column already exists
+        try:
+            # Marks a domain that only owns an nginx server block (no tenant user
+            # or DNS) — listed in Virtual Hosts but skipped by the SSL tab.
+            conn.execute("ALTER TABLE domains ADD COLUMN vhost_only INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass  # column already exists
 
 
 # ── JSON → SQLite one-time migration ──────────────────────────────────────────

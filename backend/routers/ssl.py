@@ -144,6 +144,9 @@ async def list_certs(current_user: User = Depends(get_current_user)):
     cert_map = {c["root_domain"]: c for c in cert_records}
 
     all_domains = _load_domains()
+    # Config-only vhosts (vhost_only) own an nginx block but no DNS/tenant — they
+    # can't get a DNS-01 cert, so keep them out of the SSL list entirely.
+    all_domains = [d for d in all_domains if not d.get("vhost_only")]
     if current_user.role != "admin":
         all_domains = [d for d in all_domains
                        if d.get("username") == current_user.linux_user]

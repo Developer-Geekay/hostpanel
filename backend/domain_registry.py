@@ -26,10 +26,10 @@ def _save_domains(domains: List[dict]):
         conn.execute("DELETE FROM domains")
         for d in domains:
             conn.execute(
-                "INSERT INTO domains (domain_name, username, document_root, status, created_at) "
-                "VALUES (?,?,?,?,?)",
+                "INSERT INTO domains (domain_name, username, document_root, status, created_at, vhost_only) "
+                "VALUES (?,?,?,?,?,?)",
                 (d["domain_name"], d.get("username", ""), d.get("document_root", ""),
-                 d.get("status", "active"), d.get("created_at")),
+                 d.get("status", "active"), d.get("created_at"), int(d.get("vhost_only", 0) or 0)),
             )
 
 
