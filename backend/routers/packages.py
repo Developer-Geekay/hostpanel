@@ -21,7 +21,8 @@ from modules.audit.logger import log_action
 from modules.packages import installer, lifecycle
 from modules.packages.registry import load_registry, save_registry_entry, detect_source_type
 
-CORE_VERSION = (1, 0, 0)
+from version import CORE_VERSION  # single source of truth — see version.py
+
 FRONTEND_DIR = os.environ.get("FRONTEND_DIR", "/opt/hostpanel/frontend")
 
 logger = logging.getLogger(__name__)

@@ -49,7 +49,7 @@ from routers import (
 
 load_dotenv()
 
-CORE_VERSION = (1, 1, 2)  # 1.1.2: domains.vhost_only marker — listed in Virtual Hosts, hidden from SSL
+from version import CORE_VERSION  # single source of truth — see version.py
 
 # ── SPA static file handler ────────────────────────────────────────────────────
 # Falls back to index.html for any path not matched by a real file so Angular's
